@@ -37,6 +37,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+RUN mkdir -p /opt/mise/bin /opt/mise/config \
+    && chown -R ubuntu:ubuntu /opt/mise
+
 RUN mkdir -p /run/sshd \
     && printf '\nPort 2222\nPasswordAuthentication no\nPermitRootLogin no\nPubkeyAuthentication yes\n' >> /etc/ssh/sshd_config
 
@@ -52,30 +55,26 @@ ENV TZ=Asia/Shanghai \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8 \
     SHELL=/bin/bash \
-    PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/share/mise/shims:$PATH \
+    MISE_BASE_DIR=/opt/mise \
+    MISE_INSTALL_PATH=/opt/mise/bin/mise \
+    MISE_DATA_DIR=/opt/mise \
+    MISE_CONFIG_DIR=/opt/mise/config \
+    MISE_CACHE_DIR=/opt/mise/cache \
+    MISE_STATE_DIR=/opt/mise/state \
+    PATH=/opt/mise/bin:/opt/mise/shims:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN curl https://mise.run/bash | sh
+RUN curl https://mise.run | sh
 
-RUN mise use --global \
-    node@22 \
-    python@3.13 \
-    opencode@1.17.11 \
-    npm:@fission-ai/openspec@1.5.0 \
-    npm:@openai/codex@0.137 \
-    claude@2.1.170 \
-    docker-cli@28 \
-    docker-compose@2 \
-    kubectl@1.35 \
-    uv@0 \
-    rg@15 \
-    npm:@larksuite/cli@1.0 \
-    && mkdir -p ~/.docker/cli-plugins \
-    && ln -sf "$(mise which docker-cli-plugin-docker-compose)" ~/.docker/cli-plugins/docker-compose \
+COPY --chown=ubuntu:ubuntu .tool-versions /opt/mise/config/.tool-versions
+
+RUN mise install -C /opt/mise/config -y \
+    && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
+    && sudo ln -sf "$(mise which -C /opt/mise/config docker-cli-plugin-docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
     && mise cache clear
 
-RUN python -m pip install --no-cache-dir requests~=2.32.5 urllib3~=2.6.3 pymupdf
+RUN mise exec -C /opt/mise/config -- python -m pip install --no-cache-dir requests~=2.32.5 urllib3~=2.6.3 pymupdf
 
 # keep permissions
 RUN mkdir -p ~/.vscode-server

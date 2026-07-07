@@ -34,12 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 USER ubuntu
 
-RUN mise use --global \
-    pandoc@3 \
-    github:tectonic-typesetting/tectonic@0 \
+COPY --chown=ubuntu:ubuntu .tool-versions.paper /opt/mise/config/.tool-versions
+
+RUN mise install -C /opt/mise/config -y \
     && mise cache clear
 
-RUN python -m pip install --no-cache-dir numpy
+RUN mise exec -C /opt/mise/config -- python -m pip install --no-cache-dir numpy
 
 WORKDIR /workspace
 

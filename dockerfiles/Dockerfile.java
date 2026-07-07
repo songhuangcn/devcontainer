@@ -25,6 +25,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+RUN mkdir -p /opt/mise/bin /opt/mise/config \
+    && chown -R ubuntu:ubuntu /opt/mise
+
 USER ubuntu
 
 WORKDIR /workspace
@@ -34,7 +37,13 @@ ENV TZ=Asia/Shanghai \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8 \
     SHELL=/bin/bash \
-    PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/share/mise/shims:$PATH \
+    MISE_BASE_DIR=/opt/mise \
+    MISE_INSTALL_PATH=/opt/mise/bin/mise \
+    MISE_DATA_DIR=/opt/mise \
+    MISE_CONFIG_DIR=/opt/mise/config \
+    MISE_CACHE_DIR=/opt/mise/cache \
+    MISE_STATE_DIR=/opt/mise/state \
+    PATH=/opt/mise/bin:/opt/mise/shims:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -44,25 +53,16 @@ ADD scripts/vscode-server-install.sh /tmp/vscode-server-install.sh
 RUN bash /tmp/vscode-server-install.sh 6a44c352bd24569c417e530095901b649960f9f8 && sudo rm -rf /tmp/*
 # RUN curl -sSL https://gist.githubusercontent.com/b01/0a16b6645ab7921b0910603dfb85e4fb/raw/b0375bb5dd390199518a6cdf91a909ed27807119/download-vs-code-server.sh | bash -s -- linux
 
-RUN curl https://mise.run/bash | sh
+RUN curl https://mise.run | sh
 
-RUN mise use --global \
-    node@22 \
-    python@3.13 \
-    opencode@1.15.10 \
-    docker-cli@28 \
-    docker-compose@2 \
-    kubectl@1.35 \
-    uv@0 \
-    rg@15 \
-    java@zulu-8.92.0.21 \
-    java@zulu-21.40.17.0 \
-    maven@3.9.9 \
-    && mkdir -p ~/.docker/cli-plugins \
-    && ln -sf "$(mise which docker-cli-plugin-docker-compose)" ~/.docker/cli-plugins/docker-compose \
+COPY --chown=ubuntu:ubuntu .tool-versions.java /opt/mise/config/.tool-versions
+
+RUN mise install -C /opt/mise/config -y \
+    && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
+    && sudo ln -sf "$(mise which -C /opt/mise/config docker-cli-plugin-docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
     && mise cache clear
 
-RUN pip install requests~=2.32.5 urllib3~=2.6.3 pymupdf
+RUN mise exec -C /opt/mise/config -- python -m pip install requests~=2.32.5 urllib3~=2.6.3 pymupdf
 
 # keep permissions
 RUN mkdir -p ~/.vscode-server

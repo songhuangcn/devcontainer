@@ -1,6 +1,14 @@
 name: build-devcontainer-paper
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - .dockerignore
+      - .tool-versions.paper
+      - dockerfiles/Dockerfile.paper
+      - .github/workflows/build-devcontainer-paper.yml
   workflow_dispatch:
   workflow_run:
     workflows:
@@ -44,7 +52,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.paper
+          file: dockerfiles/Dockerfile.paper
           platforms: linux/arm64
           push: true
           tags: |

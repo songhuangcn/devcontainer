@@ -59,6 +59,16 @@ sync_home_from_image() {
   fi
 }
 
+remove_legacy_home_mise_activation() {
+  local bashrc="${DATA_DIR}/.bashrc"
+
+  if [ -f "${bashrc}" ] && grep -q '/home/ubuntu/.local/bin/mise activate bash' "${bashrc}"; then
+    sed -i '\#/home/ubuntu/.local/bin/mise activate bash#d' "${bashrc}"
+    log 'removed legacy home mise activation from ./data/.bashrc.'
+  fi
+}
+
 create_env
 load_env
 sync_home_from_image
+remove_legacy_home_mise_activation

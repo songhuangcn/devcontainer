@@ -6,6 +6,10 @@ if [ -d "${HOME}/.ssh" ]; then
   [ -f "${HOME}/.ssh/authorized_keys" ] && chmod 600 "${HOME}/.ssh/authorized_keys" || true
 fi
 
+if [ -f "${HOME}/.bashrc" ] && grep -q '/home/ubuntu/.local/bin/mise activate bash' "${HOME}/.bashrc"; then
+  sed -i '\#/home/ubuntu/.local/bin/mise activate bash#d' "${HOME}/.bashrc"
+fi
+
 sudo mkdir -p /run/sshd
 sudo ssh-keygen -A >/dev/null 2>&1 || true
 

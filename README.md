@@ -9,7 +9,7 @@
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
 - `scripts/setup.sh`：生成 `.env`，并把镜像内 `/home/ubuntu` 的缺失文件合并到本地 `./data`。
 - `scripts/entrypoint.sh`：容器启动时拉起 sshd 和 OpenCode Web。
-- `Dockerfile.java`、`Dockerfile.paper`：Java 和论文输出扩展镜像。
+- `dockerfiles/Dockerfile.java`、`dockerfiles/Dockerfile.paper`：Java 和论文输出扩展镜像。
 
 ## 镜像
 
@@ -41,6 +41,10 @@ make setup
 ```
 
 `make setup` 会在缺失时生成 `.env`，然后把镜像内 `/home/ubuntu` 的缺失文件复制到本地 `./data`。生成后请按提示检查 `.env`。
+
+镜像内置工具链由 `/opt/mise` 管理，不放在 `/home/ubuntu` 下，因此不会被 `./data:/home/ubuntu` 的持久化挂载覆盖。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
+
+如果旧的 `./data/.bashrc` 包含 mise 安装器写入的 `/home/ubuntu/.local/bin/mise activate bash`，`make setup` 和容器 entrypoint 会移除这条旧激活行，避免交互式 shell 重新启用被挂载覆盖的旧 mise。
 
 启动容器和 OpenCode Web：
 
@@ -99,4 +103,4 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - `config/*`
 - `agents/*`
 
-凭证、历史记录和工具配置默认放在 `./data`，并通过 `./data:/home/ubuntu` 持久化到容器内。
+凭证、历史记录和用户配置默认放在 `./data`，并通过 `./data:/home/ubuntu` 持久化到容器内。镜像自带工具链默认放在 `/opt/mise`，更新镜像后不会被旧的用户 home 覆盖。
