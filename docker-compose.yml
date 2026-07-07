@@ -17,18 +17,8 @@ services:
     #   - "4096:4096"
     volumes:
       - ..:/workspace
-      - ~/.ssh:/home/ubuntu/.ssh
-      - ~/.gitconfig:/home/ubuntu/.gitconfig
-      - ./agents:/home/ubuntu/.agents
-      - ./config/opencode:/home/ubuntu/.config/opencode
-      - ./config/.bash_aliases:/home/ubuntu/.bash_aliases
-      - ./data/gh:/home/ubuntu/.config/gh
-      - ./data/opencode:/home/ubuntu/.local/share/opencode
-      - ./data/codex:/home/ubuntu/.codex
-      - ./data/claude:/home/ubuntu/.claude
-      - ./data/.claude.json:/home/ubuntu/.claude.json
-      - ./data/vscode-server-extensions:/home/ubuntu/.vscode-server/extensions
-      - ./data/vscode-server-data:/home/ubuntu/.vscode-server/data
+      # 整个 ubuntu 用户目录由本地 ./data 持久化；initializeCommand 会先从镜像合并缺失文件。
+      - ./data:/home/ubuntu
       # 持久化容器内 Docker 镜像/容器数据（替代原 dind sidecar 的 docker-data 卷）。
       - docker-data:/var/lib/docker
 
