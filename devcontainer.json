@@ -4,13 +4,6 @@
   "service": "app",
   "workspaceFolder": "/workspace",
   "remoteUser": "ubuntu",
-  "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:4": {},
-    "ghcr.io/devcontainers/features/sshd:1": {}
-  },
-  "initializeCommand": "bash .devcontainer/scripts/initialize.sh",
-  // "postCreateCommand": "bash .devcontainer/scripts/post-create.sh",
-  "postStartCommand": "bash .devcontainer/scripts/post-start.sh",
   "customizations": {
     "vscode": {
       "extensions": [

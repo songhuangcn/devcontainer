@@ -7,9 +7,7 @@ on:
     paths:
       - .dockerignore
       - Dockerfile
-      - devcontainer.json
-      - devcontainer-lock.json
-      - docker-compose.yml
+      - scripts/entrypoint.sh
       - .github/workflows/build-devcontainer.yml
   workflow_dispatch:
 
@@ -37,14 +35,13 @@ jobs:
         id: vars
         run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      # docker-compose 模式的 devcontainer build 需要 env_file 存在（运行时才用到其值）。
-      - name: Prepare env file
-        run: cp .env.sample .env
-
-      - name: Build devcontainer image
-        uses: devcontainers/ci@v0.3
+      - name: Build and push image
+        uses: docker/build-push-action@v6
         with:
-          configFile: devcontainer.json
-          imageName: songhuangcn/devcontainer
-          imageTag: latest,commit-${{ steps.vars.outputs.short_sha }}
-          push: always
+          context: .
+          file: Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: |
+            songhuangcn/devcontainer:commit-${{ steps.vars.outputs.short_sha }}
+            songhuangcn/devcontainer:latest

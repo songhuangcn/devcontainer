@@ -1,7 +1,7 @@
 name: workspace-devcontainer
 services:
   app:
-    # 默认拉取预构建镜像；改 Dockerfile 后用 `make build`(devcontainer build) 本地构建同名镜像。
+    # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
     image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
     build:
       context: .
@@ -9,18 +9,34 @@ services:
       cache_from:
         - songhuangcn/devcontainer:latest
     env_file:
-      - .env
-    # docker-in-docker feature 在容器内启动 dockerd，需要特权模式与 init 进程。
-    privileged: true
+      - path: .env
+        required: false
+    environment:
+      DOCKER_HOST: tcp://docker:2375
+    depends_on:
+      docker:
+        condition: service_healthy
     init: true
     # ports:
     #   - "4096:4096"
+    #   - "2222:2222"
     volumes:
       - ..:/workspace
-      # 整个 ubuntu 用户目录由本地 ./data 持久化；initializeCommand 会先从镜像合并缺失文件。
+      # 整个 ubuntu 用户目录由本地 ./data 持久化；首次使用前运行 `make setup` 合并镜像内缺失文件。
       - ./data:/home/ubuntu
-      # 持久化容器内 Docker 镜像/容器数据（替代原 dind sidecar 的 docker-data 卷）。
+  docker:
+    image: docker:28-dind
+    privileged: true
+    environment:
+      DOCKER_TLS_CERTDIR: ""
+    volumes:
+      - ..:/workspace
       - docker-data:/var/lib/docker
+    healthcheck:
+      test: ["CMD", "docker", "info"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
 volumes:
   docker-data:

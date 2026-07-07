@@ -1,134 +1,102 @@
 # Workspace
 
-This repository contains a Docker-based development workspace for running OpenCode in a reproducible devcontainer environment.
+这个仓库提供一个纯 Docker 的开发工作区，用于在可复现环境中运行 OpenCode。
 
-## What Is Included
+## 内容
 
-- Devcontainer configuration for VS Code and compatible tools.
-- Docker Compose setup for running the workspace container.
-- Base Ubuntu 24.04 image definition (`Dockerfile`) with common CLI tools — built into the images below, not published standalone.
-- Devcontainer image (`songhuangcn/devcontainer`): `Dockerfile` prebuilt with the `docker-in-docker` and `sshd` devcontainer features (the image the container runs by default).
-- Java-enabled workspace image with JDK 8, JDK 21, and Maven.
-- Paper workspace image adding a LaTeX/XeTeX, Pandoc, and CJK-font stack for academic output.
-- OpenCode configuration and bundled agent skills.
-- GitHub Actions workflows for publishing Docker images.
+- `docker-compose.yml`：启动工作容器 `app` 和 Docker-in-Docker sidecar `docker`。
+- `Dockerfile`：构建开发工具镜像，内置 OpenCode、常用 CLI、Docker CLI、Compose plugin 和 sshd。
+- `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
+- `scripts/setup.sh`：生成 `.env`，并把镜像内 `/home/ubuntu` 的缺失文件合并到本地 `./data`。
+- `scripts/entrypoint.sh`：容器启动时拉起 sshd 和 OpenCode Web。
+- `Dockerfile.java`、`Dockerfile.paper`：Java 和论文输出扩展镜像。
 
-## Images
+## 镜像
 
-The workflows publish these Docker images:
+CI 发布以下镜像：
 
-- `songhuangcn/devcontainer:latest` (`Dockerfile` + `docker-in-docker` + `sshd` features) / `songhuangcn/devcontainer:commit-<short-sha>`
+- `songhuangcn/devcontainer:latest` / `songhuangcn/devcontainer:commit-<short-sha>`
 - `songhuangcn/workspace-java:latest` / `songhuangcn/workspace-java:commit-<short-sha>`
 - `songhuangcn/workspace-paper:latest` / `songhuangcn/workspace-paper:commit-<short-sha>`
 
-`docker-compose.yml` runs `songhuangcn/devcontainer:latest` by default and supports both
-**pulling** that prebuilt image and **building** it locally (the `app` service declares both
-`image:` and `build:`). The image bakes in the `docker-in-docker` / `sshd` features defined
-in `devcontainer.json`. CI builds it with `devcontainer build` and pushes with `docker push`
-(the official `devcontainers/ci` action can't push a docker-compose config — see
-[devcontainers/ci#271](https://github.com/devcontainers/ci/issues/271)). No standalone base
-image is published; the `paper` image is built on top of `songhuangcn/devcontainer:latest`
-(after the `build-devcontainer` workflow publishes it).
+`songhuangcn/devcontainer` 虽然保留原名称，但现在是纯 Docker 镜像，不依赖 devcontainer feature。
 
-## Prerequisites
+## 前置依赖
 
-The Makefile drives the container through the devcontainer CLI. On macOS this needs
-Docker Desktop plus the devcontainer CLI. Install the CLI with mise (matches this repo's
-tooling) or npm:
+只需要 Docker 和 Docker Compose：
 
 ```bash
-mise use --global npm:@devcontainers/cli@latest   # recommended
-# or: npm install -g @devcontainers/cli           # needs Node.js; no Homebrew formula
-devcontainer --version                            # verify
+docker --version
+docker compose version
 ```
 
-## Local Usage
+不再需要安装 `devcontainer` CLI。
 
-Create a local environment file from the sample if needed:
+## 本地使用
+
+首次使用或镜像更新后，同步默认配置到本地：
 
 ```bash
-cp .env.sample .env
+make setup
 ```
 
-Prebuild the local image (`Dockerfile` + dind/sshd features), matching CI — or run
-`make pull` once CI has published it:
+`make setup` 会在缺失时生成 `.env`，然后把镜像内 `/home/ubuntu` 的缺失文件复制到本地 `./data`。生成后请按提示检查 `.env`。
 
-```bash
-make build
-```
-
-Start the container and OpenCode web server:
+启动容器和 OpenCode Web：
 
 ```bash
 make start
 ```
 
-On startup, `initializeCommand` runs `.devcontainer/scripts/initialize.sh`
-on the host before the container is created. The script starts a temporary container from
-the configured image and merges the image's original `/home/ubuntu` into local `./data`
-without overwriting existing local files. When the image ID changes,
-the merge runs again and only missing paths are added.
-
-Open an interactive shell in the container:
+进入容器：
 
 ```bash
 make bash
 ```
 
-Follow container logs:
+查看日志：
 
 ```bash
 make logs
 ```
 
-Stop the container:
+停止容器：
 
 ```bash
 make stop
 ```
 
-Update the local image and restart:
+拉取最新镜像并重启：
 
 ```bash
 make update
 ```
 
-## Docker And SSH
+本地构建运行镜像：
 
-Docker-in-Docker and an SSH server are provided by devcontainer features baked into
-the `songhuangcn/devcontainer` image:
+```bash
+make build
+```
 
-- **Docker-in-Docker**: a Docker daemon runs inside the container (default
-  `/var/run/docker.sock`), so `docker` commands work directly — no `DOCKER_HOST` and no
-  separate dind sidecar. Image/container data persists in the `docker-data` volume.
-- **sshd**: listens on container port `2222`. It is **not** published to the host by
-  default. To let other apps connect, publish it by adding a `ports` entry under the
-  `app` service in `docker-compose.yml` (e.g. `- "2222:2222"`), then connect with
-  `ssh -p 2222 ubuntu@<host>`. Authentication is public-key based: the container reads
-  `/home/ubuntu/.ssh/authorized_keys`, persisted at `./data/.ssh/authorized_keys`.
+## Docker 与 SSH
 
-## Configuration
+- Docker daemon 由 `docker:28-dind` sidecar 提供，`app` 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
+- Docker 数据持久化在 `docker-data` volume。
+- sshd 由 `app` 容器 entrypoint 启动，监听容器内 `2222` 端口。
+- SSH 默认不发布到宿主机；需要外部连接时，在 `docker-compose.yml` 的 `app.ports` 中启用 `"2222:2222"`。
+- 公钥认证读取 `./data/.ssh/authorized_keys`。
 
-Important tracked files:
+## VS Code
 
-- `devcontainer.json`: devcontainer entrypoint config (compose-based; holds the `docker-in-docker` / `sshd` features baked into the image by `make build` / CI).
-- `devcontainer-lock.json`: pins the resolved feature versions (auto-generated by `devcontainer build`).
-- `docker-compose.yml`: the `app` service declares both `image:` (pull) and `build:` (local build via `make build`), plus the persistent `./data:/home/ubuntu` mount.
-- `scripts/initialize.sh`: pre-create host script that merges image `/home/ubuntu` into local `./data` without overwriting local files.
-- `Dockerfile`: base image definition (built into the devcontainer / paper images, not published standalone).
-- `Dockerfile.java`: Java workspace image definition.
-- `Dockerfile.paper`: paper workspace image definition (built on top of `songhuangcn/devcontainer`).
-- `data/.config/opencode/opencode.jsonc`: local OpenCode runtime configuration, ignored by Git and mounted through `./data`.
-- `.github/workflows/build-devcontainer.yml`: devcontainer image publishing workflow (`devcontainer build` + `docker push`).
-- `.github/workflows/build-devcontainer-java.yml`: Java image publishing workflow.
-- `.github/workflows/build-devcontainer-paper.yml`: paper image publishing workflow.
+VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文件只引用同一份 `docker-compose.yml`，不再声明任何 feature 或 lifecycle 回调；首次使用前统一运行 `make setup`。
 
-## Local Data And Secrets
+## 本地数据
 
-The repository intentionally ignores local runtime data and secrets, including:
+以下内容不会提交到 Git：
 
 - `.env`
 - `data/*`
-- `config/*` and `agents/*` legacy local data directories
+- `config/*`
+- `agents/*`
 
-Keep credentials and generated data out of Git.
+凭证、历史记录和工具配置默认放在 `./data`，并通过 `./data:/home/ubuntu` 持久化到容器内。

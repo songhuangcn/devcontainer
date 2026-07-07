@@ -1,4 +1,4 @@
-# 基于含 dind/sshd features 的运行镜像构建（CI 推送的 songhuangcn/devcontainer:latest）。
+# 基于纯 Docker 工作区镜像构建（CI 推送的 songhuangcn/devcontainer:latest）。
 ARG BASE_IMAGE=songhuangcn/devcontainer:latest
 FROM ${BASE_IMAGE}
 
