@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - .dockerignore
-      - .tool-versions.java
+      - dockerfiles/.tool-versions.java
       - dockerfiles/Dockerfile.java
       - .github/workflows/build-devcontainer-java.yml
   workflow_dispatch:

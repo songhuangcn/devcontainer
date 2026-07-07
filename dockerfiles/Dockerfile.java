@@ -55,7 +55,7 @@ RUN bash /tmp/vscode-server-install.sh 6a44c352bd24569c417e530095901b649960f9f8 
 
 RUN curl https://mise.run | sh
 
-COPY --chown=ubuntu:ubuntu .tool-versions.java /opt/mise/config/.tool-versions
+COPY --chown=ubuntu:ubuntu dockerfiles/.tool-versions.java /opt/mise/config/.tool-versions
 
 RUN mise install -C /opt/mise/config -y \
     && sudo mkdir -p /usr/local/lib/docker/cli-plugins \

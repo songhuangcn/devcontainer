@@ -3,19 +3,14 @@ services:
   app:
     # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
     image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
-    build:
-      context: .
-      dockerfile: Dockerfile
-      cache_from:
-        - songhuangcn/devcontainer:latest
+    build: .
     env_file:
-      - path: .env
-        required: false
+      - .env
     environment:
       DOCKER_HOST: tcp://docker:2375
-    depends_on:
-      docker:
-        condition: service_healthy
+    # depends_on:
+    #   docker:
+    #     condition: service_healthy
     init: true
     # ports:
     #   - "4096:4096"
