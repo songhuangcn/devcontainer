@@ -65,6 +65,6 @@ RUN mise install -y \
 RUN mise exec -- python -m pip install requests~=2.32.5 urllib3~=2.6.3 pymupdf
 
 # keep permissions
-RUN mkdir -p ~/.vscode-server
+RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode
 
 CMD ["sleep", "infinity"]
