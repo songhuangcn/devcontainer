@@ -37,7 +37,7 @@ get_latest_release() {
 }
 
 PLATFORM="linux"
-ARCH="arm64"
+ARCH="${2:-}"
 COMMIT="${1}"
 
 if [ -z "${PLATFORM}" ]; then
@@ -56,6 +56,25 @@ if [ -z "${ARCH}" ]; then
         ARCH="armhf"
     fi
 fi
+
+case "${ARCH}" in
+    amd64|x86_64)
+        ARCH="x64"
+        ;;
+    arm64|aarch64)
+        ARCH="arm64"
+        ;;
+    armv7l|armhf)
+        ARCH="armhf"
+        ;;
+    x64)
+        ARCH="x64"
+        ;;
+    *)
+        echo "unsupported architecture: ${ARCH}"
+        exit 1
+        ;;
+esac
 
 commit_sha="${COMMIT}"
 
