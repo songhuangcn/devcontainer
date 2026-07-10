@@ -15,6 +15,12 @@ services:
     # ports:
     #   - "4096:4096"
     #   - "2222:2222"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${OPENCODE_PORT:-4096}/global/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     volumes:
       - ..:/workspace
       # 只持久化用户数据目录；.bashrc/.profile 等 shell 启动文件继续使用镜像内版本。
