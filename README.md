@@ -7,7 +7,7 @@
 - `docker-compose.yml`：启动工作容器 `app` 和 Docker-in-Docker sidecar `docker`。
 - `Dockerfile`：构建开发工具镜像，内置 OpenCode、常用 CLI、Docker CLI、Compose plugin 和 sshd。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
-- `scripts/setup.sh`：生成 `.env`，并把镜像内 `/home/ubuntu` 的缺失文件合并到本地 `./data`。
+- `scripts/setup.sh`：准备本地 `./data` 下的持久化用户数据路径。
 - `scripts/entrypoint.sh`：容器启动时拉起 sshd 和 OpenCode Web。
 - `dockerfiles/Dockerfile.java`、`dockerfiles/Dockerfile.paper`：Java 和论文输出扩展镜像。
 
@@ -34,17 +34,19 @@ docker compose version
 
 ## 本地使用
 
-首次使用或镜像更新后，同步默认配置到本地：
+如需自动创建 `.env` 和必需的文件型挂载，可运行：
 
 ```bash
 make setup
 ```
 
-`make setup` 会在缺失时生成 `.env`，然后把镜像内 `/home/ubuntu` 的缺失文件复制到本地 `./data`。生成后请按提示检查 `.env`。
+`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并创建 Compose 会挂载到 `/home/ubuntu` 的必需空文件。这个步骤不是启动前置条件；目录型挂载可由 Docker 自动创建，文件型挂载在文件不存在时会直接报错。
 
-镜像内置工具链由 `/opt/mise` 管理，不放在 `/home/ubuntu` 下，因此不会被 `./data:/home/ubuntu` 的持久化挂载覆盖。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
+必需存在的文件包括 `.env`、`./data/.claude.json` 和 `./data/.gitconfig`。如果不想运行 `make setup`，也可以手动创建这些文件。
 
-如果旧的 `./data/.bashrc` 包含 mise 安装器写入的 `/home/ubuntu/.local/bin/mise activate bash`，`make setup` 和容器 entrypoint 会移除这条旧激活行，避免交互式 shell 重新启用被挂载覆盖的旧 mise。
+镜像内置工具链由 `/opt/mise` 管理，不放在 `/home/ubuntu` 下。`docker-compose.yml` 只挂载选定的用户数据路径，因此 `.bashrc`、`.profile` 等 shell 启动文件继续使用镜像内版本。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
+
+如果旧的 `./data/.bashrc`、`./data/.profile` 仍存在，它们不会再挂载到容器内。
 
 启动容器和 OpenCode Web：
 
@@ -92,7 +94,7 @@ make build
 
 ## VS Code
 
-VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文件只引用同一份 `docker-compose.yml`，不再声明任何 feature 或 lifecycle 回调；首次使用前统一运行 `make setup`。
+VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文件只引用同一份 `docker-compose.yml`，不再声明任何 feature 或 lifecycle 回调。
 
 ## 本地数据
 
@@ -103,4 +105,4 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - `config/*`
 - `agents/*`
 
-凭证、历史记录和用户配置默认放在 `./data`，并通过 `./data:/home/ubuntu` 持久化到容器内。镜像自带工具链默认放在 `/opt/mise`，更新镜像后不会被旧的用户 home 覆盖。
+凭证、历史记录和用户数据默认放在 `./data`，并按需挂载到 `/home/ubuntu` 下的对应路径。镜像自带的 `.bashrc`、`.profile` 和工具链配置不会被本地 `./data` 覆盖。

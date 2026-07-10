@@ -17,8 +17,28 @@ services:
     #   - "2222:2222"
     volumes:
       - ..:/workspace
-      # 整个 ubuntu 用户目录由本地 ./data 持久化；首次使用前运行 `make setup` 合并镜像内缺失文件。
-      - ./data:/home/ubuntu
+      # 只持久化用户数据目录；.bashrc/.profile 等 shell 启动文件继续使用镜像内版本。
+      - ./data/.agents:/home/ubuntu/.agents
+      - ./data/.cache:/home/ubuntu/.cache
+      - ./data/.claude:/home/ubuntu/.claude
+      - ./data/.codex:/home/ubuntu/.codex
+      - ./data/.config:/home/ubuntu/.config
+      - ./data/.copilot:/home/ubuntu/.copilot
+      - ./data/.lark-cli:/home/ubuntu/.lark-cli
+      - ./data/.local:/home/ubuntu/.local
+      - ./data/.npm:/home/ubuntu/.npm
+      - ./data/.ssh:/home/ubuntu/.ssh
+      - ./data/.vscode-server:/home/ubuntu/.vscode-server
+      - type: bind
+        source: ./data/.claude.json
+        target: /home/ubuntu/.claude.json
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/.gitconfig
+        target: /home/ubuntu/.gitconfig
+        bind:
+          create_host_path: false
   docker:
     image: docker:28-dind
     privileged: true
