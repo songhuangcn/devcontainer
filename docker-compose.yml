@@ -12,9 +12,11 @@ services:
     #   docker:
     #     condition: service_healthy
     init: true
-    # ports:
-    #   - "4096:4096"
+    ports:
+      - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
     #   - "2222:2222"
+    entrypoint: ""
+    command: opencode web --hostname 0.0.0.0 --port ${OPENCODE_PORT:-4096}
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${OPENCODE_PORT:-4096}/global/health >/dev/null"]
       interval: 10s
