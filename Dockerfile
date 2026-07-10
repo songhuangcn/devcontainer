@@ -67,14 +67,14 @@ ENV TZ=Asia/Shanghai \
 
 RUN curl https://mise.run | sh
 
-COPY --chown=ubuntu:ubuntu .tool-versions /opt/mise/config/.tool-versions
+COPY --chown=ubuntu:ubuntu mise.toml /opt/mise/config/mise.toml
 
-RUN mise install -C /opt/mise/config -y \
+RUN mise install \
     && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
-    && sudo ln -sf "$(mise which -C /opt/mise/config docker-cli-plugin-docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
+    && sudo ln -sf "$(mise which docker-cli-plugin-docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
     && mise cache clear
 
-RUN mise exec -C /opt/mise/config -- python -m pip install --no-cache-dir requests~=2.32.5 urllib3~=2.6.3 pymupdf
+RUN mise exec -- python -m pip install --no-cache-dir requests~=2.32.5 urllib3~=2.6.3 pymupdf
 
 # keep permissions
 RUN mkdir -p ~/.vscode-server

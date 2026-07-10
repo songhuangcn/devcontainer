@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - .dockerignore
-      - .tool-versions
+      - mise.toml
       - Dockerfile
       - scripts/entrypoint.sh
       - .github/workflows/build-devcontainer.yml

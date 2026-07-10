@@ -34,12 +34,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 USER ubuntu
 
-COPY --chown=ubuntu:ubuntu dockerfiles/.tool-versions.paper /opt/mise/config/.tool-versions
+COPY --chown=ubuntu:ubuntu dockerfiles/mise.paper.toml /opt/mise/config/mise.toml
 
-RUN mise install -C /opt/mise/config -y \
+RUN mise install -y \
     && mise cache clear
 
-RUN mise exec -C /opt/mise/config -- python -m pip install --no-cache-dir numpy
+RUN mise exec -- python -m pip install --no-cache-dir numpy
 
 WORKDIR /workspace
 

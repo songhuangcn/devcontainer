@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - .dockerignore
-      - dockerfiles/.tool-versions.paper
+      - dockerfiles/mise.paper.toml
       - dockerfiles/Dockerfile.paper
       - .github/workflows/build-devcontainer-paper.yml
   workflow_dispatch:
@@ -56,5 +56,5 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: |
-            songhuangcn/workspace-paper:commit-${{ steps.vars.outputs.short_sha }}
-            songhuangcn/workspace-paper:latest
+            songhuangcn/devcontainer-paper:commit-${{ steps.vars.outputs.short_sha }}
+            songhuangcn/devcontainer-paper:latest

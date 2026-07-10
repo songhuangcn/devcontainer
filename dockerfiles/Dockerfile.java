@@ -55,14 +55,14 @@ RUN bash /tmp/vscode-server-install.sh 6a44c352bd24569c417e530095901b649960f9f8 
 
 RUN curl https://mise.run | sh
 
-COPY --chown=ubuntu:ubuntu dockerfiles/.tool-versions.java /opt/mise/config/.tool-versions
+COPY --chown=ubuntu:ubuntu dockerfiles/mise.java.toml /opt/mise/config/mise.toml
 
-RUN mise install -C /opt/mise/config -y \
+RUN mise install -y \
     && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
-    && sudo ln -sf "$(mise which -C /opt/mise/config docker-cli-plugin-docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
+    && sudo ln -sf "$(mise which docker-cli-plugin-docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
     && mise cache clear
 
-RUN mise exec -C /opt/mise/config -- python -m pip install requests~=2.32.5 urllib3~=2.6.3 pymupdf
+RUN mise exec -- python -m pip install requests~=2.32.5 urllib3~=2.6.3 pymupdf
 
 # keep permissions
 RUN mkdir -p ~/.vscode-server

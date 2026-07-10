@@ -2,12 +2,9 @@ export COMPOSE_PROJECT_NAME = workspace-devcontainer
 
 COMPOSE = docker compose -f docker-compose.yml
 
-.PHONY: setup
-setup:
-	bash scripts/setup.sh
-
 .PHONY: run
-run: start
+run:
+	$(COMPOSE) up
 
 .PHONY: start
 start:
@@ -37,7 +34,7 @@ bash:
 	$(COMPOSE) exec app bash
 
 .PHONY: update
-update: pull down start
+update: pull setup down start
 
 .PHONY: pull
 pull:

@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - .dockerignore
-      - dockerfiles/.tool-versions.java
+      - dockerfiles/mise.java.toml
       - dockerfiles/Dockerfile.java
       - .github/workflows/build-devcontainer-java.yml
   workflow_dispatch:
@@ -43,5 +43,5 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: |
-            songhuangcn/workspace-java:commit-${{ steps.vars.outputs.short_sha }}
-            songhuangcn/workspace-java:latest
+            songhuangcn/devcontainer-java:commit-${{ steps.vars.outputs.short_sha }}
+            songhuangcn/devcontainer-java:latest
