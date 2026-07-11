@@ -37,16 +37,8 @@ services:
       - ./data/.npm:/home/ubuntu/.npm
       - ./data/.ssh:/home/ubuntu/.ssh
       - ./data/.vscode-server:/home/ubuntu/.vscode-server
-      - type: bind
-        source: ./data/.claude.json
-        target: /home/ubuntu/.claude.json
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ./data/.gitconfig
-        target: /home/ubuntu/.gitconfig
-        bind:
-          create_host_path: false
+      - ./data/.claude.json:/home/ubuntu/.claude.json
+      - ./data/.gitconfig:/home/ubuntu/.gitconfig
   docker:
     image: docker:28-dind
     privileged: true
