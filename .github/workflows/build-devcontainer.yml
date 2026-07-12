@@ -9,6 +9,7 @@ on:
       - mise.toml
       - Dockerfile
       - scripts/entrypoint.sh
+      - deploy/**
       - .github/workflows/build-devcontainer.yml
   workflow_dispatch:
 
@@ -18,6 +19,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04-arm
+    outputs:
+      short_sha: ${{ steps.vars.outputs.short_sha }}
 
     steps:
       - name: Checkout repository
@@ -46,3 +49,31 @@ jobs:
           tags: |
             songhuangcn/devcontainer:commit-${{ steps.vars.outputs.short_sha }}
             songhuangcn/devcontainer:latest
+
+  deploy:
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Configure kubectl
+        uses: azure/k8s-set-context@v4
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Update image tag in kustomization
+        run: |
+          sed -i "s|newTag: .*|newTag: \"commit-${{ needs.build.outputs.short_sha }}\"|g" deploy/kustomization.yaml
+
+      - name: Deploy to Kubernetes
+        run: |
+          kubectl apply -k deploy/
+          kubectl rollout status deployment/app -n devcontainer --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n devcontainer
+          kubectl get svc -n devcontainer

@@ -1,0 +1,4 @@
+sealed-secret.key
+*secret.yaml
+!*sealed-secret.yaml
+sealed-secret.yaml

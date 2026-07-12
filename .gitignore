@@ -1,6 +1,6 @@
-data
-config
-agents
+/data
+/config
+/agents
 .env
 .DS_Store
 !**/.keep

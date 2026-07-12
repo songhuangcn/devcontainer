@@ -96,6 +96,32 @@ make build
 
 VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文件只引用同一份 `docker-compose.yml`，不再声明任何 feature 或 lifecycle 回调。
 
+## k3s 部署
+
+`deploy/` 目录（风格参考 `yangcheng-team/eastar-price` 的 `deploy/`）把这个工作区部署为 k3s 上长期运行的个人云端实例：
+
+- 集群：`oracle-arm1`（2 节点 k3s，Traefik + cert-manager + Sealed Secrets 均为集群已有组件），namespace `devcontainer`，域名 `https://devcontainer.hdgcs.com`。
+- 只有单一环境，不做 stg/prod 分层；`deploy/kustomization.yaml` 直接管理全部资源。
+- 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.local/.npm/.ssh/.vscode-server` 等目录及 `.claude.json`/`.gitconfig`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。
+- 鉴权：`opencode web` 原生的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`），通过 Sealed Secret (`deploy/app-sealed-secret.yaml`) 注入，密码只有本人保存的一份，不在仓库里。
+- Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`app` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
+- 探针用 `tcpSocket` 而不是 `httpGet`：因为设置了 `OPENCODE_SERVER_PASSWORD` 后 `/global/health` 也需要 Basic Auth，`httpGet` 探针拿不到密码会一直 401。
+- 首次上线时手动把本地 `./data` 下的 `.ssh`、`.claude`/`.codex` 登录态、`gh`/`lark-cli` 配置等**凭据**（不含 `.cache`/`.local`/`.vscode-server`/`.claude` 里的会话历史等可再生数据）一次性迁移进了 `home-data-pvc`；之后的更新走 CI，不再涉及这类手动数据迁移。
+
+手动操作（需要本地 `kubectl` 已指向该集群、并安装 `kubeseal`）：
+
+```bash
+make deploy.config   # 预览 kustomize 渲染结果
+make deploy.apply    # kubectl apply -k deploy/ 并等待 rollout
+make deploy.status   # 查看 Pod/Service/Ingress/PVC
+make deploy.logs     # 查看 app 容器日志
+make deploy.bash     # 进入集群里的 app 容器
+```
+
+修改 `deploy/app-secret.yaml`（明文，已被 `deploy/.gitignore` 排除）后，用 `make deploy.encode` 重新生成 `deploy/app-sealed-secret.yaml`。
+
+`.github/workflows/build-devcontainer.yml` 在构建镜像成功后会自动 `kubectl apply -k deploy/`，使用当次构建的 `commit-<short-sha>` 镜像 tag；所需的 `KUBECONFIG` secret 对应一个只在 `devcontainer` 命名空间内有权限的 ServiceAccount（非集群管理员凭据）。
+
 ## 本地数据
 
 以下内容不会提交到 Git：

@@ -1,0 +1,34 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: https-redirect
+  namespace: devcontainer
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: devcontainer-https-redirect@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - devcontainer.hdgcs.com
+    secretName: tls-secret
+  rules:
+  - host: devcontainer.hdgcs.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app
+            port:
+              number: 4096

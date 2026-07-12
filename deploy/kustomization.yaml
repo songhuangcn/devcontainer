@@ -1,0 +1,12 @@
+kind: Kustomization
+namespace: devcontainer
+resources:
+- namespace.yaml
+- configmap.yaml
+- app-sealed-secret.yaml
+- pvc.yaml
+- deployment.yaml
+- ingress.yaml
+images:
+- name: songhuangcn/devcontainer
+  newTag: latest
