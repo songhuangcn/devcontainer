@@ -52,7 +52,7 @@ ENV TZ=Asia/Shanghai \
 # VS Code Server broken
 # https://gist.github.com/b01/0a16b6645ab7921b0910603dfb85e4fb
 ADD scripts/vscode-server-install.sh /tmp/vscode-server-install.sh
-RUN bash /tmp/vscode-server-install.sh 6a44c352bd24569c417e530095901b649960f9f8 "${TARGETARCH}" && sudo rm -rf /tmp/*
+RUN bash /tmp/vscode-server-install.sh 4fe60c8b1cdac1c4c174f2fb180d0d758272d713 "${TARGETARCH}" && sudo rm -rf /tmp/*
 # RUN curl -sSL https://gist.githubusercontent.com/b01/0a16b6645ab7921b0910603dfb85e4fb/raw/b0375bb5dd390199518a6cdf91a909ed27807119/download-vs-code-server.sh | bash -s -- linux
 
 RUN curl https://mise.run | sh
