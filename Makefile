@@ -69,11 +69,11 @@ deploy.encode: # 把明文 deploy/app-secret.yaml 加密成 deploy/app-sealed-se
 
 .PHONY: deploy.config
 deploy.config: # 本地预览 kustomize 渲染结果，不实际 apply
-	kubectl kustomize deploy/
+	kubectl kustomize ./
 
 .PHONY: deploy.apply
 deploy.apply: # 应用 deploy/ 到集群
-	kubectl apply -k deploy/
+	kubectl apply -k ./
 	kubectl rollout status deployment/app -n devcontainer --timeout=5m
 
 .PHONY: deploy.status

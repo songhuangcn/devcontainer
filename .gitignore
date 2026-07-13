@@ -1,5 +1,4 @@
 /data
-/config
 /agents
 .env
 .DS_Store

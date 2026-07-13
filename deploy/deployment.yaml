@@ -122,9 +122,19 @@ spec:
         - name: home-data
           mountPath: /home/ubuntu/.claude.json
           subPath: .claude.json
-        - name: home-data
+        # 可提交的工具配置由根目录 kustomization 从 config/ 生成。
+        - name: config-data
+          mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
+          subPath: opencode.jsonc
+        - name: config-data
           mountPath: /home/ubuntu/.gitconfig
           subPath: .gitconfig
+        - name: config-data
+          mountPath: /home/ubuntu/.claude/settings.json
+          subPath: claude-settings.json
+        - name: config-data
+          mountPath: /home/ubuntu/.codex/config.toml
+          subPath: codex-config.toml
       # Docker-in-Docker sidecar：和 app 容器共享同一个 Pod network namespace，
       # app 里通过 DOCKER_HOST=tcp://localhost:2375 连接
       - name: dind
@@ -151,6 +161,9 @@ spec:
       - name: home-data
         persistentVolumeClaim:
           claimName: home-data-pvc
+      - name: config-data
+        configMap:
+          name: config-data
       - name: docker-data
         persistentVolumeClaim:
           claimName: docker-data-pvc

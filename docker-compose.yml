@@ -38,7 +38,11 @@ services:
       - ./data/.ssh:/home/ubuntu/.ssh
       - ./data/.vscode-server:/home/ubuntu/.vscode-server
       - ./data/.claude.json:/home/ubuntu/.claude.json
-      - ./data/.gitconfig:/home/ubuntu/.gitconfig
+      # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
+      - ./config/.gitconfig:/home/ubuntu/.gitconfig
+      - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
+      - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml
+      - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
   docker:
     image: docker:28-dind
     privileged: true

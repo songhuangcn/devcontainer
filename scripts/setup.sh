@@ -9,7 +9,6 @@ ENV_FILE="${ROOT_DIR}/.env"
 ENV_SAMPLE="${ROOT_DIR}/.env.sample"
 PERSISTENT_FILES=(
   .claude.json
-  .gitconfig
 )
 
 log() {

@@ -1,0 +1,24 @@
+{
+  "enabledPlugins": {
+    "academic-research-skills@academic-research-skills": true,
+    "ppt-master@ppt-master": true
+  },
+  "extraKnownMarketplaces": {
+    "academic-research-skills": {
+      "source": {
+        "source": "github",
+        "repo": "Imbad0202/academic-research-skills"
+      }
+    },
+    "ppt-master": {
+      "source": {
+        "source": "github",
+        "repo": "hugohe3/ppt-master"
+      }
+    }
+  },
+  "autoMemoryEnabled": true,
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "dark",
+  "effortLevel": "high"
+}

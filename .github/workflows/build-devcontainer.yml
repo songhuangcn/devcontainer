@@ -9,7 +9,9 @@ on:
       - mise.toml
       - Dockerfile
       - scripts/entrypoint.sh
+      - config/**
       - deploy/**
+      - kustomization.yaml
       - .github/workflows/build-devcontainer.yml
   workflow_dispatch:
 
@@ -70,7 +72,7 @@ jobs:
 
       - name: Deploy to Kubernetes
         run: |
-          kubectl apply -k deploy/
+          kubectl apply -k ./
           kubectl rollout status deployment/app -n devcontainer --timeout=5m
 
       - name: Verify deployment

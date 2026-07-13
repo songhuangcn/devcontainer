@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: devcontainer
+resources:
+- deploy/
+configMapGenerator:
+- name: config-data
+  files:
+  - opencode.jsonc=config/opencode.jsonc
+  - .gitconfig=config/.gitconfig
+  - claude-settings.json=config/claude-settings.json
+  - codex-config.toml=config/codex-config.toml
