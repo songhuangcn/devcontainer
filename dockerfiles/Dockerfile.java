@@ -61,7 +61,7 @@ COPY --chown=ubuntu:ubuntu dockerfiles/mise.java.toml /opt/mise/config/mise.toml
 
 RUN mise install -y \
     && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
-    && sudo ln -sf "$(mise which docker-cli-plugin-docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
+    && sudo ln -sf "$(mise which docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
     && mise cache clear
 
 RUN mise exec -- python -m pip install requests~=2.32.5 urllib3~=2.6.3 pymupdf
