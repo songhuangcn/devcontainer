@@ -19,10 +19,10 @@ spec:
   ingressClassName: traefik
   tls:
   - hosts:
-    - devcontainer.hdgcs.com
+    - ai.hdgcs.com
     secretName: tls-secret
   rules:
-  - host: devcontainer.hdgcs.com
+  - host: ai.hdgcs.com
     http:
       paths:
       - path: /
