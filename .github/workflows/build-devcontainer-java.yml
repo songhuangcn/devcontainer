@@ -7,10 +7,16 @@ on:
     paths:
       - .dockerignore
       - dockerfiles/mise.java.toml
+      - dockerfiles/vscode.java.version
       - dockerfiles/Dockerfile.java
       - scripts/vscode-server-install.sh
       - .github/workflows/build-devcontainer-java.yml
   workflow_dispatch:
+    inputs:
+      vscode_version:
+        description: VS Code stable version (defaults to dockerfiles/vscode.java.version)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -35,9 +41,35 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Get short commit SHA
+      - name: Resolve image versions and tags
         id: vars
-        run: echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+        env:
+          REQUESTED_VSCODE_VERSION: ${{ inputs.vscode_version }}
+        run: |
+          set -euo pipefail
+
+          short_sha="${GITHUB_SHA::7}"
+          default_vscode_version=$(tr -d '[:space:]' < dockerfiles/vscode.java.version)
+          vscode_version="${REQUESTED_VSCODE_VERSION:-${default_vscode_version}}"
+
+          if [[ ! "${vscode_version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid VS Code version: ${vscode_version}" >&2
+            exit 1
+          fi
+
+          image="songhuangcn/devcontainer-java"
+          {
+            echo "short_sha=${short_sha}"
+            echo "vscode_version=${vscode_version}"
+            echo "tags<<EOF"
+            echo "${image}:vscode-${vscode_version}"
+            echo "${image}:vscode-${vscode_version}-repo-${short_sha}"
+            if [[ "${vscode_version}" == "${default_vscode_version}" ]]; then
+              echo "${image}:commit-${short_sha}"
+              echo "${image}:latest"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
         uses: docker/build-push-action@v6
@@ -46,6 +78,6 @@ jobs:
           file: dockerfiles/Dockerfile.java
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            songhuangcn/devcontainer-java:commit-${{ steps.vars.outputs.short_sha }}
-            songhuangcn/devcontainer-java:latest
+          build-args: |
+            VSCODE_VERSION=${{ steps.vars.outputs.vscode_version }}
+          tags: ${{ steps.vars.outputs.tags }}

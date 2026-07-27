@@ -1,6 +1,7 @@
 FROM ubuntu:24.04
 
 ARG TARGETARCH
+ARG VSCODE_VERSION
 
 # Install basic development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -49,12 +50,12 @@ ENV TZ=Asia/Shanghai \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# VS Code Server broken
+# Preinstall VS Code Server for dev container connections.
 # https://gist.github.com/b01/0a16b6645ab7921b0910603dfb85e4fb
-ADD scripts/vscode-server-install.sh /tmp/vscode-server-install.sh
-RUN bash /tmp/vscode-server-install.sh 1b6a188127eeaf9194f945eb6eb89a657e93c54c "${TARGETARCH}" && sudo rm -rf /tmp/*
-# RUN curl -sSL https://gist.githubusercontent.com/b01/0a16b6645ab7921b0910603dfb85e4fb/raw/b0375bb5dd390199518a6cdf91a909ed27807119/download-vs-code-server.sh | bash -s -- linux
-
+COPY --chown=ubuntu:ubuntu scripts/vscode-server-install.sh dockerfiles/vscode.java.version /tmp/
+RUN vscode_version="${VSCODE_VERSION:-$(cat /tmp/vscode.java.version)}" \
+    && bash /tmp/vscode-server-install.sh "${vscode_version}" "${TARGETARCH}" \
+    && rm -f /tmp/vscode-server-install.sh /tmp/vscode.java.version /tmp/vscode-server-linux-*.tar.gz
 RUN curl https://mise.run | sh
 
 COPY --chown=ubuntu:ubuntu dockerfiles/mise.java.toml /opt/mise/config/mise.toml

@@ -20,28 +20,14 @@
 # FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
 # IN THE SOFTWARE.
 
-set -e
-
-# Auto-Get the latest commit sha via command line.
-get_latest_release() {
-    platform=${1}
-    arch=${2}
-
-    # Grab the first commit SHA since as this script assumes it will be the
-    # latest.
-    platform="win32"
-    arch="x64"
-    commit_id=$(curl --silent "https://update.code.visualstudio.com/api/commits/stable/${platform}-${arch}" | sed s'/^\["\([^"]*\).*$/\1/')
-
-    printf "%s" "${commit_id}"
-}
+set -eu
 
 PLATFORM="linux"
 ARCH="${2:-}"
-COMMIT="${1}"
+VERSION="${1:-}"
 
-if [ -z "${PLATFORM}" ]; then
-    echo "please enter a platform, acceptable values are win32, linux, darwin, or alpine"
+if ! printf "%s" "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "invalid VS Code version '${VERSION}', expected x.y.z" >&2
     exit 1
 fi
 
@@ -76,28 +62,34 @@ case "${ARCH}" in
         ;;
 esac
 
-commit_sha="${COMMIT}"
+archive="vscode-server-${PLATFORM}-${ARCH}.tar.gz"
+update_url="https://update.code.visualstudio.com/${VERSION}/server-${PLATFORM}-${ARCH}/stable"
 
-if [ -n "${commit_sha}" ]; then
-    echo "will attempt to download VS Code Server version = '${commit_sha}'"
+echo "downloading VS Code Server ${VERSION} for ${PLATFORM}-${ARCH}"
+effective_url=$(curl --fail --location --silent --show-error \
+    --output "/tmp/${archive}" \
+    --write-out '%{url_effective}' \
+    "${update_url}")
 
-    prefix="server-${PLATFORM}"
-    if [ "${PLATFORM}" = "alpine" ]; then
-        prefix="cli-${PLATFORM}"
-    fi
-
-    archive="vscode-${prefix}-${ARCH}.tar.gz"
-    # Download VS Code Server tarball to tmp directory.
-    curl -L "https://vscode.download.prss.microsoft.com/dbazure/download/stable/${commit_sha}/${archive}" -o "/tmp/${archive}"
-
-    # Make the parent directory where the server should live.
-    # NOTE: Ensure VS Code will have read/write access; namely the user running VScode or container user.
-    mkdir -vp ~/.vscode-server/bin/"${commit_sha}"
-
-    # Extract the tarball to the right location.
-    tar --no-same-owner -xzv --strip-components=1 -C ~/.vscode-server/bin/"${commit_sha}" -f "/tmp/${archive}"
-    # Add symlink
-    cd ~/.vscode-server/bin && ln -s "${commit_sha}" default_version
-else
-    echo "could not pre install vscode server"
+commit_path=${effective_url%/*}
+commit_sha=${commit_path##*/}
+case "${commit_sha}" in
+    ''|*[!0-9a-f]*)
+        echo "could not resolve VS Code commit from '${effective_url}'" >&2
+        exit 1
+        ;;
+esac
+if [ "${#commit_sha}" -ne 40 ]; then
+    echo "could not resolve VS Code commit from '${effective_url}'" >&2
+    exit 1
 fi
+
+echo "resolved VS Code ${VERSION} to commit ${commit_sha}"
+
+# VS Code clients locate preinstalled servers by commit, not release version.
+mkdir -p ~/.vscode-server/bin/"${commit_sha}"
+tar --no-same-owner -xz --strip-components=1 \
+    -C ~/.vscode-server/bin/"${commit_sha}" \
+    -f "/tmp/${archive}"
+cd ~/.vscode-server/bin
+ln -sfn "${commit_sha}" default_version
