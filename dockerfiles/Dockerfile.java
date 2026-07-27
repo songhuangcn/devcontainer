@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-client \
     locales \
     sqlite3 \
+    xdg-utils \
     && locale-gen en_US.UTF-8 zh_CN.UTF-8 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
