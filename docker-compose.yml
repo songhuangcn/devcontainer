@@ -36,7 +36,9 @@ services:
       - ./data/.local:/home/ubuntu/.local
       - ./data/.npm:/home/ubuntu/.npm
       - ./data/.ssh:/home/ubuntu/.ssh
-      - ./data/.vscode-server:/home/ubuntu/.vscode-server
+      # 保留镜像预装的 VS Code Server bin，只持久化用户数据和扩展。
+      - ./data/.vscode-server/data:/home/ubuntu/.vscode-server/data
+      - ./data/.vscode-server/extensions:/home/ubuntu/.vscode-server/extensions
       - ./data/.claude.json:/home/ubuntu/.claude.json
       # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
       - ./config/.gitconfig:/home/ubuntu/.gitconfig
