@@ -5,11 +5,11 @@
 ## 内容
 
 - `docker-compose.yml`：启动工作容器 `app` 和 Docker-in-Docker sidecar `docker`。
-- `Dockerfile`：构建开发工具镜像，内置 OpenCode、常用 CLI、Docker CLI、Compose plugin 和 sshd。
+- `Dockerfile`：构建开发工具镜像，内置 OpenCode、常用 CLI、Docker CLI、Compose plugin、sshd 和论文输出工具链。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
 - `scripts/setup.sh`：准备本地 `./data` 下的持久化用户数据路径。
 - `scripts/entrypoint.sh`：容器启动时拉起 sshd 和 OpenCode Web。
-- `dockerfiles/Dockerfile.java`、`dockerfiles/Dockerfile.paper`：Java 和论文输出扩展镜像。
+- `dockerfiles/Dockerfile.java`：Java 扩展镜像。
 
 ## 镜像
 
@@ -17,9 +17,8 @@ CI 发布以下镜像：
 
 - `songhuangcn/devcontainer:latest` / `songhuangcn/devcontainer:commit-<short-sha>`
 - `songhuangcn/devcontainer-java:latest` / `songhuangcn/devcontainer-java:commit-<short-sha>`
-- `songhuangcn/devcontainer-paper:latest` / `songhuangcn/devcontainer-paper:commit-<short-sha>`
 
-`songhuangcn/devcontainer` 虽然保留原名称，但现在是纯 Docker 镜像，不依赖 devcontainer feature。
+`songhuangcn/devcontainer` 虽然保留原名称，但现在是纯 Docker 镜像，不依赖 devcontainer feature，并已包含 LaTeX/PDF、Pandoc DOCX、CJK 字体和 PDF 检查工具。
 
 Java 镜像预装的 VS Code Server 默认版本由 `dockerfiles/vscode.java.version` 定义。Java 镜像还会发布按 VS Code 版本命名的标签，可以直接拉取指定版本：
 

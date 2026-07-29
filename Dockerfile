@@ -9,8 +9,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    biber \
     build-essential \
     clang \
+    default-jre-headless \
+    fontconfig \
+    fonts-croscore \
+    fonts-dejavu \
+    fonts-liberation \
+    fonts-noto-cjk \
+    ghostscript \
     git \
     pkg-config \
     procps \
@@ -25,15 +33,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     lsof \
     man-db \
     jq \
+    latexmk \
     tree \
+    libreoffice-writer \
     gh \
     libssl-dev \
     openssh-client \
     openssh-server \
     locales \
+    poppler-utils \
+    qpdf \
     sqlite3 \
+    texlive-bibtex-extra \
+    texlive-fonts-recommended \
+    texlive-lang-chinese \
+    texlive-latex-base \
+    texlive-latex-extra \
+    texlive-latex-recommended \
+    texlive-luatex \
+    texlive-publishers \
+    texlive-xetex \
     xdg-utils \
     && locale-gen en_US.UTF-8 zh_CN.UTF-8 \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
@@ -75,7 +97,7 @@ RUN mise install \
     && sudo ln -sf "$(mise which docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
     && mise cache clear
 
-RUN mise exec -- python -m pip install --no-cache-dir requests~=2.32.5 urllib3~=2.6.3 pymupdf
+RUN mise exec -- python -m pip install --no-cache-dir requests~=2.32.5 urllib3~=2.6.3 pymupdf numpy
 
 # keep permissions
 RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode
