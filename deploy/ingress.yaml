@@ -32,3 +32,28 @@ spec:
             name: app
             port:
               number: 4096
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openclaw-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    traefik.ingress.kubernetes.io/router.middlewares: devcontainer-https-redirect@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - claw.hdgcs.com
+    secretName: openclaw-tls-secret
+  rules:
+  - host: claw.hdgcs.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: app
+            port:
+              number: 18789

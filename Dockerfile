@@ -79,12 +79,6 @@ RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 RUN mkdir -p /opt/mise/bin /opt/mise/config \
     && chown -R ubuntu:ubuntu /opt/mise
 
-RUN mkdir -p /run/sshd \
-    && printf '\nPort 2222\nPasswordAuthentication no\nPermitRootLogin no\nPubkeyAuthentication yes\n' >> /etc/ssh/sshd_config
-
-COPY scripts/entrypoint.sh /usr/local/bin/workspace-entrypoint
-RUN chmod +x /usr/local/bin/workspace-entrypoint
-
 USER ubuntu
 
 WORKDIR /workspace
@@ -125,7 +119,6 @@ RUN mise exec -- python -m pip install --no-cache-dir \
     urllib3~=2.6.3
 
 # keep permissions
-RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode
+RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode ~/.openclaw
 
-ENTRYPOINT ["workspace-entrypoint"]
 CMD ["sleep", "infinity"]

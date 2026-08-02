@@ -1,14 +1,13 @@
 # Workspace
 
-这个仓库提供一个纯 Docker 的开发工作区，用于在可复现环境中运行 OpenCode。
+这个仓库提供一个纯 Docker 的开发工作区，用于在可复现环境中运行 OpenCode 和 OpenClaw。
 
 ## 内容
 
-- `docker-compose.yml`：启动工作容器 `app` 和 Docker-in-Docker sidecar `docker`。
-- `Dockerfile`：构建开发工具镜像，内置 OpenCode、常用 CLI、Docker CLI、Compose plugin、sshd 和论文输出工具链。
+- `docker-compose.yml`：启动 OpenCode Web 服务 `app`、OpenClaw Gateway 服务 `openclaw` 和 Docker-in-Docker sidecar `docker`。
+- `Dockerfile`：构建开发工具镜像，内置 OpenCode、OpenClaw、常用 CLI、Docker CLI、Compose plugin 和论文输出工具链。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
 - `scripts/setup.sh`：准备本地 `./data` 下的持久化用户数据路径。
-- `scripts/entrypoint.sh`：容器启动时拉起 sshd 和 OpenCode Web。
 - `dockerfiles/Dockerfile.java`：Java 扩展镜像。
 
 ## 镜像
@@ -41,25 +40,33 @@ docker compose version
 
 ## 本地使用
 
-如需自动创建 `.env` 和必需的文件型挂载，可运行：
+首次启动前创建 `.env` 和必需的持久化路径：
 
 ```bash
 make setup
 ```
 
-`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并创建 Compose 会挂载到 `/home/ubuntu` 的必需空文件。这个步骤不是启动前置条件；目录型挂载可由 Docker 自动创建。
+`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并创建 Compose 会挂载到 `/home/ubuntu` 的必需空文件和 OpenClaw 状态目录，确保目录由当前用户创建并可由容器写入。
 
-必需存在的本地文件包括 `.env` 和 `./data/.claude.json`。如果不想运行 `make setup`，也可以手动创建这些文件。OpenCode、Git、Claude 和 Codex 的可共享配置位于 `./config`，随版本库提供。
+必需存在的本地文件包括 `.env` 和 `./data/.claude.json`。如果不想运行 `make setup`，也可以手动创建这些文件。OpenCode、Git、Claude 和 Codex 的可共享配置位于 `./config`，随版本库提供。OpenClaw 状态持久化在 `./data/.openclaw`。
 
 镜像内置工具链由 `/opt/mise` 管理，不放在 `/home/ubuntu` 下。`docker-compose.yml` 只挂载选定的用户数据路径，因此 `.bashrc`、`.profile` 等 shell 启动文件继续使用镜像内版本。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
 
 如果旧的 `./data/.bashrc`、`./data/.profile` 仍存在，它们不会再挂载到容器内。
 
-启动容器和 OpenCode Web：
+在 `.env` 中设置 OpenClaw Gateway token：
+
+```bash
+OPENCLAW_GATEWAY_TOKEN=<随机 token>
+```
+
+启动容器、OpenCode Web 和 OpenClaw Gateway：
 
 ```bash
 make start
 ```
+
+OpenCode Web 默认地址为 `http://localhost:4096`，OpenClaw Control UI 默认地址为 `http://localhost:18789`。
 
 进入容器：
 
@@ -91,13 +98,10 @@ make update
 make build
 ```
 
-## Docker 与 SSH
+## Docker
 
 - Docker daemon 由 `docker:28-dind` sidecar 提供，`app` 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
 - Docker 数据持久化在 `docker-data` volume。
-- sshd 由 `app` 容器 entrypoint 启动，监听容器内 `2222` 端口。
-- SSH 默认不发布到宿主机；需要外部连接时，在 `docker-compose.yml` 的 `app.ports` 中启用 `"2222:2222"`。
-- 公钥认证读取 `./data/.ssh/authorized_keys`。
 
 ## VS Code
 
@@ -107,13 +111,13 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 
 `deploy/` 目录（风格参考 `yangcheng-team/eastar-price` 的 `deploy/`）把这个工作区部署为 k3s 上长期运行的个人云端实例：
 
-- 集群：`oracle-arm1`（2 节点 k3s，Traefik + cert-manager + Sealed Secrets 均为集群已有组件），namespace `devcontainer`，域名 `https://ai.hdgcs.com`。
+- 集群：`oracle-arm1`（2 节点 k3s，Traefik + cert-manager + Sealed Secrets 均为集群已有组件），namespace `devcontainer`；OpenCode 使用 `https://ai.hdgcs.com`，OpenClaw 使用 `https://claw.hdgcs.com`。
 - 只有单一环境，不做 stg/prod 分层；根目录 `kustomization.yaml` 在 `deploy/` 基础资源之上生成工具配置。
-- 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.local/.npm/.ssh/.vscode-server` 等目录及 `.claude.json`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。
+- 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.local/.npm/.ssh/.vscode-server` 等目录及 `.claude.json`）、`openclaw-data-pvc`（8Gi，挂载到 `~/.openclaw`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。四者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。
 - 配置：根目录 Kustomize overlay 从 `config/` 生成带内容哈希的 ConfigMap，挂载 OpenCode、Git、Claude 和 Codex 配置；配置变化会触发 Pod 滚动更新。
-- 鉴权：`opencode web` 原生的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`），通过 Sealed Secret (`deploy/app-sealed-secret.yaml`) 注入，密码只有本人保存的一份，不在仓库里。
-- Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`app` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
-- 探针用 `tcpSocket` 而不是 `httpGet`：因为设置了 `OPENCODE_SERVER_PASSWORD` 后 `/global/health` 也需要 Basic Auth，`httpGet` 探针拿不到密码会一直 401。
+- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）；OpenClaw Gateway 复用该 Secret 值作为 `OPENCLAW_GATEWAY_PASSWORD`。密码不在仓库里。
+- Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`app` 和 `openclaw` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
+- 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401；OpenClaw 使用无需鉴权的 `/healthz` 和 `/readyz`。
 - 首次上线时手动把本地 `./data` 下的 `.ssh`、`.claude`/`.codex` 登录态、`gh`/`lark-cli` 配置等**凭据**（不含 `.cache`/`.local`/`.vscode-server`/`.claude` 里的会话历史等可再生数据）一次性迁移进了 `home-data-pvc`；之后的更新走 CI，不再涉及这类手动数据迁移。
 
 手动操作（需要本地 `kubectl` 已指向该集群、并安装 `kubeseal`）：

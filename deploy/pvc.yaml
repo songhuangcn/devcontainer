@@ -29,6 +29,20 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: openclaw-data-pvc
+  labels:
+    app: devcontainer
+spec:
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 8Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: docker-data-pvc
   labels:
     app: devcontainer

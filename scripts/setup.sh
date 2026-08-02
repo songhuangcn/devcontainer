@@ -27,7 +27,7 @@ create_env() {
 prepare_persistent_files() {
   local file
 
-  mkdir -p "${DATA_DIR}"
+  mkdir -p "${DATA_DIR}/.openclaw"
 
   for file in "${PERSISTENT_FILES[@]}"; do
     touch "${DATA_DIR}/${file}"

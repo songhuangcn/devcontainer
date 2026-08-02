@@ -10,6 +10,9 @@ spec:
   - port: 4096
     targetPort: 4096
     name: opencode
+  - port: 18789
+    targetPort: 18789
+    name: openclaw
   selector:
     app: devcontainer
 ---
@@ -40,12 +43,22 @@ spec:
       initContainers:
       - name: fix-ownership
         image: busybox:1.36
-        command: ["chown", "-R", "1000:1000", "/mnt/workspace", "/mnt/home-data"]
+        command: ["chown", "-R", "1000:1000", "/mnt/workspace", "/mnt/home-data", "/mnt/openclaw-data"]
         volumeMounts:
         - name: workspace
           mountPath: /mnt/workspace
         - name: home-data
           mountPath: /mnt/home-data
+        - name: openclaw-data
+          mountPath: /mnt/openclaw-data
+      - name: configure-openclaw
+        image: songhuangcn/devcontainer
+        imagePullPolicy: Always
+        command: ["openclaw"]
+        args: ["config", "set", "gateway.controlUi.allowedOrigins", "[\"https://claw.hdgcs.com\"]"]
+        volumeMounts:
+        - name: openclaw-data
+          mountPath: /home/ubuntu/.openclaw
       containers:
       - name: app
         image: songhuangcn/devcontainer
@@ -122,6 +135,8 @@ spec:
         - name: home-data
           mountPath: /home/ubuntu/.claude.json
           subPath: .claude.json
+        - name: openclaw-data
+          mountPath: /home/ubuntu/.openclaw
         # 可提交的工具配置由根目录 kustomization 从 config/ 生成。
         - name: config-data
           mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
@@ -135,8 +150,52 @@ spec:
         - name: config-data
           mountPath: /home/ubuntu/.codex/config.toml
           subPath: codex-config.toml
+      - name: openclaw
+        image: songhuangcn/devcontainer
+        imagePullPolicy: Always
+        command: ["openclaw"]
+        args: ["gateway", "--allow-unconfigured", "--bind", "lan", "--port", "18789", "--auth", "password"]
+        env:
+        - name: OPENCLAW_GATEWAY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secret
+              key: OPENCODE_SERVER_PASSWORD
+        - name: DOCKER_HOST
+          value: tcp://localhost:2375
+        ports:
+        - containerPort: 18789
+          name: openclaw
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 18789
+          initialDelaySeconds: 15
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 18789
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: openclaw-data
+          mountPath: /home/ubuntu/.openclaw
       # Docker-in-Docker sidecar：和 app 容器共享同一个 Pod network namespace，
-      # app 里通过 DOCKER_HOST=tcp://localhost:2375 连接
+      # app 和 openclaw 通过 DOCKER_HOST=tcp://localhost:2375 连接
       - name: dind
         image: docker:28-dind
         securityContext:
@@ -161,6 +220,9 @@ spec:
       - name: home-data
         persistentVolumeClaim:
           claimName: home-data-pvc
+      - name: openclaw-data
+        persistentVolumeClaim:
+          claimName: openclaw-data-pvc
       - name: config-data
         configMap:
           name: config-data

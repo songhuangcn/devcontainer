@@ -8,7 +8,6 @@ on:
       - .dockerignore
       - mise.toml
       - Dockerfile
-      - scripts/entrypoint.sh
       - config/**
       - deploy/**
       - kustomization.yaml
