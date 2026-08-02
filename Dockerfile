@@ -6,7 +6,10 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     software-properties-common \
     && add-apt-repository --yes universe \
+    && add-apt-repository --yes multiverse \
     && rm -rf /var/lib/apt/lists/*
+
+RUN printf 'ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true\n' | debconf-set-selections
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     biber \
@@ -53,10 +56,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-luatex \
     texlive-publishers \
     texlive-xetex \
+    ttf-mscorefonts-installer \
     xdg-utils \
     && locale-gen en_US.UTF-8 zh_CN.UTF-8 \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
+
+ARG SOURCE_HAN_SERIF_VERSION=2.003R
+ARG SOURCE_HAN_SERIF_TC_SHA256=71354ed752104c8a3cbcff18943c6110d179d01cc6eaaf1aff7ea14c4a447879
+RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
+    && curl --proto '=https' --tlsv1.2 -fsSL \
+        "https://raw.githubusercontent.com/adobe-fonts/source-han-serif/${SOURCE_HAN_SERIF_VERSION}/Variable/TTF/SourceHanSerifTC-VF.ttf" \
+        -o /usr/local/share/fonts/opentype/source-han-serif/SourceHanSerifTC-VF.ttf \
+    && printf '%s  %s\n' \
+        "${SOURCE_HAN_SERIF_TC_SHA256}" \
+        /usr/local/share/fonts/opentype/source-han-serif/SourceHanSerifTC-VF.ttf \
+        | sha256sum --check - \
+    && fc-cache -f
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
@@ -97,7 +113,16 @@ RUN mise install \
     && sudo ln -sf "$(mise which docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
     && mise cache clear
 
-RUN mise exec -- python -m pip install --no-cache-dir requests~=2.32.5 urllib3~=2.6.3 pymupdf numpy
+RUN mise exec -- python -m pip install --no-cache-dir \
+    defusedxml \
+    "jsonschema[format]>=4.17" \
+    numpy \
+    pypdf \
+    pymupdf \
+    pyyaml \
+    requests~=2.32.5 \
+    "ruamel.yaml>=0.17" \
+    urllib3~=2.6.3
 
 # keep permissions
 RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode
