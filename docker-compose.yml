@@ -14,13 +14,14 @@ services:
     init: true
     ports:
       - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
-    command: opencode web --hostname 0.0.0.0 --port ${OPENCODE_PORT:-4096}
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    entrypoint: /workspace/.devcontainer/scripts/entrypoint.sh
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${OPENCODE_PORT:-4096}/global/health >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${OPENCODE_PORT:-4096}/global/health >/dev/null && curl -fsS http://127.0.0.1:18789/healthz >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 5
-      start_period: 10s
+      start_period: 20s
     volumes:
       - ..:/workspace
       # 只持久化用户数据目录；.bashrc/.profile 等 shell 启动文件继续使用镜像内版本。
@@ -44,25 +45,6 @@ services:
       - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
       - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml
       - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
-  openclaw:
-    image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
-    env_file:
-      - .env
-    init: true
-    ports:
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-    command: openclaw gateway --allow-unconfigured --bind lan --port 18789
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18789/healthz >/dev/null"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
-    volumes:
-      - ..:/workspace
-      - ./data/.claude:/home/ubuntu/.claude
-      - ./data/.claude.json:/home/ubuntu/.claude.json
-      - ./data/.openclaw:/home/ubuntu/.openclaw
   docker:
     image: docker:28-dind
     privileged: true

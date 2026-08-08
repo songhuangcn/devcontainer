@@ -4,9 +4,10 @@
 
 ## 内容
 
-- `docker-compose.yml`：启动 OpenCode Web 服务 `app`、OpenClaw Gateway 服务 `openclaw` 和 Docker-in-Docker sidecar `docker`。
+- `docker-compose.yml`：在 `app` 中启动 OpenCode Web 与 OpenClaw Gateway，并启动 Docker-in-Docker sidecar `docker`。
 - `Dockerfile`：构建开发工具镜像，内置 OpenCode、OpenClaw、常用 CLI、Docker CLI、Compose plugin 和论文输出工具链。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
+- `scripts/entrypoint.sh`：在 `app` 容器内同时启动 OpenCode 和 OpenClaw。
 - `scripts/setup.sh`：准备本地 `./data` 下的持久化用户数据路径。
 - `dockerfiles/Dockerfile.java`：Java 扩展镜像。
 

@@ -24,7 +24,7 @@ restart-opencode:
 
 .PHONY: logs
 logs:
-	$(COMPOSE) logs -f app openclaw
+	$(COMPOSE) logs -f app
 
 .PHONY: restart
 restart: stop start
