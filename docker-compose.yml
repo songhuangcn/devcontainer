@@ -60,6 +60,8 @@ services:
       start_period: 20s
     volumes:
       - ..:/workspace
+      - ./data/.claude:/home/ubuntu/.claude
+      - ./data/.claude.json:/home/ubuntu/.claude.json
       - ./data/.openclaw:/home/ubuntu/.openclaw
   docker:
     image: docker:28-dind

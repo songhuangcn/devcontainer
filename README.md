@@ -115,7 +115,7 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 只有单一环境，不做 stg/prod 分层；根目录 `kustomization.yaml` 在 `deploy/` 基础资源之上生成工具配置。
 - 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.local/.npm/.ssh/.vscode-server` 等目录及 `.claude.json`）、`openclaw-data-pvc`（8Gi，挂载到 `~/.openclaw`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。四者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。
 - 配置：根目录 Kustomize overlay 从 `config/` 生成带内容哈希的 ConfigMap，挂载 OpenCode、Git、Claude 和 Codex 配置；配置变化会触发 Pod 滚动更新。
-- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）；OpenClaw Gateway 复用该 Secret 值作为 `OPENCLAW_GATEWAY_PASSWORD`。密码不在仓库里。
+- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）；OpenClaw Gateway 复用该 Secret 值作为 `OPENCLAW_GATEWAY_PASSWORD`，并共享 `home-data-pvc` 中持久化的 Claude Code CLI 登录态。密码不在仓库里。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`app` 和 `openclaw` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
 - 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401；OpenClaw 使用无需鉴权的 `/healthz` 和 `/readyz`。
 - 首次上线时手动把本地 `./data` 下的 `.ssh`、`.claude`/`.codex` 登录态、`gh`/`lark-cli` 配置等**凭据**（不含 `.cache`/`.local`/`.vscode-server`/`.claude` 里的会话历史等可再生数据）一次性迁移进了 `home-data-pvc`；之后的更新走 CI，不再涉及这类手动数据迁移。

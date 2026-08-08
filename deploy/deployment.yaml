@@ -192,6 +192,12 @@ spec:
         volumeMounts:
         - name: workspace
           mountPath: /workspace
+        - name: home-data
+          mountPath: /home/ubuntu/.claude
+          subPath: .claude
+        - name: home-data
+          mountPath: /home/ubuntu/.claude.json
+          subPath: .claude.json
         - name: openclaw-data
           mountPath: /home/ubuntu/.openclaw
       # Docker-in-Docker sidecar：和 app 容器共享同一个 Pod network namespace，
