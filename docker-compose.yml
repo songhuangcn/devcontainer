@@ -1,28 +1,16 @@
 name: workspace-devcontainer
-services:
-  app:
-    # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
-    image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
-    build: .
-    env_file:
-      - .env
-    environment:
-      DOCKER_HOST: tcp://docker:2375
-    # depends_on:
-    #   docker:
-    #     condition: service_healthy
-    init: true
-    ports:
-      - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
-      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
-    entrypoint: /workspace/.devcontainer/scripts/entrypoint.sh
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${OPENCODE_PORT:-4096}/global/health >/dev/null && curl -fsS http://127.0.0.1:18789/healthz >/dev/null"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 20s
-    volumes:
+
+x-app-base: &app-base
+  # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
+  image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
+  build: .
+  env_file:
+    - .env
+  environment:
+    DOCKER_HOST: tcp://docker:2375
+  init: true
+  restart: unless-stopped
+  volumes:
       - ..:/workspace
       # 只持久化用户数据目录；.bashrc/.profile 等 shell 启动文件继续使用镜像内版本。
       - ./data/.agents:/home/ubuntu/.agents
@@ -33,6 +21,7 @@ services:
       - ./data/.copilot:/home/ubuntu/.copilot
       - ./data/.lark-cli:/home/ubuntu/.lark-cli
       - ./data/.local:/home/ubuntu/.local
+      - ./data/.multica:/home/ubuntu/.multica
       - ./data/.npm:/home/ubuntu/.npm
       - ./data/.openclaw:/home/ubuntu/.openclaw
       - ./data/.ssh:/home/ubuntu/.ssh
@@ -40,11 +29,45 @@ services:
       - ./data/.vscode-server/data:/home/ubuntu/.vscode-server/data
       - ./data/.vscode-server/extensions:/home/ubuntu/.vscode-server/extensions
       - ./data/.claude.json:/home/ubuntu/.claude.json
+      - ./data/multica_workspaces:/home/ubuntu/multica_workspaces
       # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
       - ./config/.gitconfig:/home/ubuntu/.gitconfig
       - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
       - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml
       - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
+
+services:
+  opencode:
+    <<: *app-base
+    command: ["opencode", "web", "--hostname", "0.0.0.0", "--port", "${OPENCODE_PORT:-4096}"]
+    ports:
+      - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${OPENCODE_PORT:-4096}/global/health >/dev/null"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+  openclaw:
+    <<: *app-base
+    command: ["openclaw", "gateway", "--allow-unconfigured", "--bind", "lan", "--port", "18789"]
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18789/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+  multica:
+    <<: *app-base
+    command: ["multica", "daemon", "start", "--foreground"]
+    healthcheck:
+      test: ["CMD", "multica", "daemon", "status", "--output", "json"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
   docker:
     image: docker:28-dind
     privileged: true

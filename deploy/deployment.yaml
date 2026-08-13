@@ -43,24 +43,23 @@ spec:
       initContainers:
       - name: fix-ownership
         image: busybox:1.36
-        command: ["chown", "-R", "1000:1000", "/mnt/workspace", "/mnt/home-data", "/mnt/openclaw-data"]
+        command: ["chown", "-R", "1000:1000", "/mnt/workspace", "/mnt/home-data"]
         volumeMounts:
         - name: workspace
           mountPath: /mnt/workspace
         - name: home-data
           mountPath: /mnt/home-data
-        - name: openclaw-data
-          mountPath: /mnt/openclaw-data
       - name: configure-openclaw
         image: songhuangcn/devcontainer
         imagePullPolicy: Always
         command: ["openclaw"]
         args: ["config", "set", "gateway.controlUi.allowedOrigins", "[\"https://claw.hdgcs.com\"]"]
         volumeMounts:
-        - name: openclaw-data
+        - name: home-data
           mountPath: /home/ubuntu/.openclaw
+          subPath: .openclaw
       containers:
-      - name: app
+      - name: opencode
         image: songhuangcn/devcontainer
         imagePullPolicy: Always
         command: ["opencode"]
@@ -124,6 +123,9 @@ spec:
           mountPath: /home/ubuntu/.local
           subPath: .local
         - name: home-data
+          mountPath: /home/ubuntu/.multica
+          subPath: .multica
+        - name: home-data
           mountPath: /home/ubuntu/.npm
           subPath: .npm
         - name: home-data
@@ -135,8 +137,12 @@ spec:
         - name: home-data
           mountPath: /home/ubuntu/.claude.json
           subPath: .claude.json
-        - name: openclaw-data
+        - name: home-data
+          mountPath: /home/ubuntu/multica_workspaces
+          subPath: multica_workspaces
+        - name: home-data
           mountPath: /home/ubuntu/.openclaw
+          subPath: .openclaw
         # 可提交的工具配置由根目录 kustomization 从 config/ 生成。
         - name: config-data
           mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
@@ -198,10 +204,78 @@ spec:
         - name: home-data
           mountPath: /home/ubuntu/.claude.json
           subPath: .claude.json
-        - name: openclaw-data
+        - name: home-data
           mountPath: /home/ubuntu/.openclaw
-      # Docker-in-Docker sidecar：和 app 容器共享同一个 Pod network namespace，
-      # app 和 openclaw 通过 DOCKER_HOST=tcp://localhost:2375 连接
+          subPath: .openclaw
+      - name: multica
+        image: songhuangcn/devcontainer
+        imagePullPolicy: Always
+        command: ["multica"]
+        args: ["daemon", "start", "--foreground"]
+        env:
+        - name: DOCKER_HOST
+          value: tcp://localhost:2375
+        livenessProbe:
+          exec:
+            command: ["multica", "daemon", "status", "--output", "json"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        - name: home-data
+          mountPath: /home/ubuntu/.agents
+          subPath: .agents
+        - name: home-data
+          mountPath: /home/ubuntu/.claude
+          subPath: .claude
+        - name: home-data
+          mountPath: /home/ubuntu/.codex
+          subPath: .codex
+        - name: home-data
+          mountPath: /home/ubuntu/.config
+          subPath: .config
+        - name: home-data
+          mountPath: /home/ubuntu/.copilot
+          subPath: .copilot
+        - name: home-data
+          mountPath: /home/ubuntu/.local
+          subPath: .local
+        - name: home-data
+          mountPath: /home/ubuntu/.multica
+          subPath: .multica
+        - name: home-data
+          mountPath: /home/ubuntu/.npm
+          subPath: .npm
+        - name: home-data
+          mountPath: /home/ubuntu/.ssh
+          subPath: .ssh
+        - name: home-data
+          mountPath: /home/ubuntu/multica_workspaces
+          subPath: multica_workspaces
+        - name: home-data
+          mountPath: /home/ubuntu/.claude.json
+          subPath: .claude.json
+        - name: config-data
+          mountPath: /home/ubuntu/.gitconfig
+          subPath: .gitconfig
+        - name: config-data
+          mountPath: /home/ubuntu/.claude/settings.json
+          subPath: claude-settings.json
+        - name: config-data
+          mountPath: /home/ubuntu/.codex/config.toml
+          subPath: codex-config.toml
+      # Docker-in-Docker sidecar：与应用容器共享同一个 Pod network namespace，
+      # opencode、openclaw 和 multica 通过 DOCKER_HOST=tcp://localhost:2375 连接
       - name: dind
         image: docker:28-dind
         securityContext:
@@ -226,9 +300,6 @@ spec:
       - name: home-data
         persistentVolumeClaim:
           claimName: home-data-pvc
-      - name: openclaw-data
-        persistentVolumeClaim:
-          claimName: openclaw-data-pvc
       - name: config-data
         configMap:
           name: config-data

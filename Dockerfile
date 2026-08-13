@@ -62,6 +62,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
+RUN curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash \
+    && multica version
+
 ARG SOURCE_HAN_SERIF_VERSION=2.003R
 ARG SOURCE_HAN_SERIF_TC_SHA256=71354ed752104c8a3cbcff18943c6110d179d01cc6eaaf1aff7ea14c4a447879
 RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
@@ -119,6 +122,6 @@ RUN mise exec -- python -m pip install --no-cache-dir \
     urllib3~=2.6.3
 
 # keep permissions
-RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode ~/.openclaw
+RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode ~/.openclaw ~/.multica ~/multica_workspaces
 
 CMD ["sleep", "infinity"]

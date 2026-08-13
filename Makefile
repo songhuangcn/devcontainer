@@ -19,12 +19,37 @@ start-opencode: restart-opencode
 
 .PHONY: restart-opencode
 restart-opencode:
-	$(COMPOSE) up -d app
-	$(COMPOSE) restart app
+	$(COMPOSE) up -d opencode
+	$(COMPOSE) restart opencode
 
 .PHONY: logs
 logs:
-	$(COMPOSE) logs -f app
+	$(COMPOSE) logs -f opencode
+
+.PHONY: multica.login
+multica.login:
+	$(COMPOSE) run --rm --no-deps multica multica login --token
+	$(COMPOSE) restart multica
+
+.PHONY: multica.status
+multica.status:
+	$(COMPOSE) exec multica multica daemon status --output json
+
+.PHONY: multica.logs
+multica.logs:
+	$(COMPOSE) logs -f multica
+
+.PHONY: multica.restart
+multica.restart:
+	$(COMPOSE) restart multica
+
+.PHONY: multica.stop
+multica.stop:
+	$(COMPOSE) stop multica
+
+.PHONY: multica.smoke
+multica.smoke:
+	$(COMPOSE) run --rm --no-deps multica multica version
 
 .PHONY: restart
 restart: stop start
@@ -35,7 +60,7 @@ stop:
 
 .PHONY: bash
 bash:
-	$(COMPOSE) exec app bash
+	$(COMPOSE) exec opencode bash
 
 .PHONY: update
 update: pull down start
@@ -46,7 +71,7 @@ pull:
 
 .PHONY: build
 build:
-	$(COMPOSE) build app
+	$(COMPOSE) build opencode
 
 .PHONY: down
 down:
@@ -81,9 +106,22 @@ deploy.status: # 查看当前部署状态
 	kubectl get pods,svc,ingress,pvc -n devcontainer
 
 .PHONY: deploy.logs
-deploy.logs: # 查看 app 容器日志
-	kubectl logs -n devcontainer -l app=devcontainer -c app -f
+deploy.logs: # 查看 opencode 容器日志
+	kubectl logs -n devcontainer -l app=devcontainer -c opencode -f
 
 .PHONY: deploy.bash
-deploy.bash: # 进入集群里运行的 app 容器
-	kubectl exec -it -n devcontainer deployment/app -c app -- bash
+deploy.bash: # 进入集群里的 opencode 容器
+	kubectl exec -it -n devcontainer deployment/app -c opencode -- bash
+
+.PHONY: deploy.multica-login
+deploy.multica-login: # 在终端安全输入 PAT，并将登录态保存到 home-data-pvc
+	kubectl exec -it -n devcontainer deployment/app -c opencode -- multica login --token
+	kubectl rollout restart deployment/app -n devcontainer
+
+.PHONY: deploy.multica-status
+deploy.multica-status:
+	kubectl exec -n devcontainer deployment/app -c multica -- multica daemon status --output json
+
+.PHONY: deploy.multica-logs
+deploy.multica-logs:
+	kubectl logs -n devcontainer deployment/app -c multica -f

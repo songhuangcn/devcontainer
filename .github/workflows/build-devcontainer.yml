@@ -8,6 +8,10 @@ on:
       - .dockerignore
       - mise.toml
       - Dockerfile
+      - docker-compose.yml
+      - Makefile
+      - README.md
+      - scripts/**
       - config/**
       - deploy/**
       - kustomization.yaml

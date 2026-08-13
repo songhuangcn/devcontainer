@@ -1,7 +1,7 @@
 {
   "name": "Workspace",
   "dockerComposeFile": "docker-compose.yml",
-  "service": "app",
+  "service": "opencode",
   "workspaceFolder": "/workspace",
   "remoteUser": "ubuntu",
   "customizations": {
