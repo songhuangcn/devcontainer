@@ -1,3 +1,34 @@
+ARG MULTICA_VERSION=0.4.24
+ARG MULTICA_LINUX_AMD64_SHA256=736dd222bb4305ba1dd0f5483c8d52cd281bacf55cff04285b9dda5a96e2a140
+ARG MULTICA_LINUX_ARM64_SHA256=fc889a99c77820486fbb480668c3f18cc7cb4f22d9ce76f86b8f414f02e4088c
+
+FROM ubuntu:24.04 AS multica-cli
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG MULTICA_VERSION
+ARG MULTICA_LINUX_AMD64_SHA256
+ARG MULTICA_LINUX_ARM64_SHA256
+
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Pin the Multica CLI and verify the release archive before installing it.
+RUN arch="$(dpkg --print-architecture)" \
+    && case "${arch}" in \
+        amd64) multica_sha256="${MULTICA_LINUX_AMD64_SHA256}" ;; \
+        arm64) multica_sha256="${MULTICA_LINUX_ARM64_SHA256}" ;; \
+        *) echo "Unsupported Multica CLI architecture: ${arch}" >&2; exit 1 ;; \
+    esac \
+    && archive="multica-cli-${MULTICA_VERSION}-linux-${arch}.tar.gz" \
+    && curl --proto '=https' --tlsv1.2 -fsSL \
+        "https://github.com/multica-ai/multica/releases/download/v${MULTICA_VERSION}/${archive}" \
+        -o "/tmp/${archive}" \
+    && printf '%s  %s\n' "${multica_sha256}" "/tmp/${archive}" | sha256sum --check - \
+    && tar -xzf "/tmp/${archive}" -C /usr/local/bin multica \
+    && chmod 0755 /usr/local/bin/multica \
+    && rm "/tmp/${archive}" \
+    && multica version
+
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -62,6 +93,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=multica-cli /usr/local/bin/multica /usr/local/bin/multica
+RUN multica version
+
 ARG SOURCE_HAN_SERIF_VERSION=2.003R
 ARG SOURCE_HAN_SERIF_TC_SHA256=71354ed752104c8a3cbcff18943c6110d179d01cc6eaaf1aff7ea14c4a447879
 RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
@@ -119,6 +153,8 @@ RUN mise exec -- python -m pip install --no-cache-dir \
     urllib3~=2.6.3
 
 # keep permissions
-RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode ~/.openclaw
+RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode ~/.openclaw ~/.multica ~/multica_workspaces
+
+COPY --chown=ubuntu:ubuntu --chmod=0755 scripts/multica-daemon-entrypoint.sh /usr/local/bin/multica-daemon-entrypoint
 
 CMD ["sleep", "infinity"]

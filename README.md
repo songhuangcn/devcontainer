@@ -1,6 +1,6 @@
 # Workspace
 
-这个仓库提供一个纯 Docker 的开发工作区，用于在可复现环境中运行 OpenCode 和 OpenClaw。
+这个仓库提供一个纯 Docker 的长期开发工作区，用于在可复现环境中运行 OpenCode、OpenClaw 和 Multica daemon。
 
 ## 内容
 
@@ -9,6 +9,7 @@
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
 - `scripts/entrypoint.sh`：在 `app` 容器内同时启动 OpenCode 和 OpenClaw。
 - `scripts/setup.sh`：准备本地 `./data` 下的持久化用户数据路径。
+- `scripts/multica-daemon-entrypoint.sh`：以前台方式托管 Multica daemon；未登录时等待，异常退出后自动重启。
 - `dockerfiles/Dockerfile.java`：Java 扩展镜像。
 
 ## 镜像
@@ -61,7 +62,7 @@ make setup
 OPENCLAW_GATEWAY_TOKEN=<随机 token>
 ```
 
-启动容器、OpenCode Web 和 OpenClaw Gateway：
+启动容器、OpenCode Web、OpenClaw Gateway 和 Multica daemon supervisor：
 
 ```bash
 make start
@@ -99,6 +100,69 @@ make update
 make build
 ```
 
+## Multica daemon
+
+镜像内置并锁定 Multica CLI `0.4.24`，构建时分别校验 amd64/arm64 release archive 的 SHA-256。daemon 使用独立的 `multica-daemon` 服务运行，不与 OpenCode 的主进程耦合：Compose 的 `restart: unless-stopped` 负责容器级恢复，入口脚本负责 daemon 进程异常退出后的恢复。CLI 的自动更新被关闭；升级时修改 `Dockerfile` 中的版本和两个 release checksum，重新构建镜像，从而保证升级可审计和可重复。
+
+### 首次初始化
+
+从干净环境开始：
+
+```bash
+make setup
+make start
+make multica.login
+```
+
+`make multica.login` 使用交互提示读取 `mul_...` PAT，token 不会进入命令历史、`.env`、镜像层或仓库。可在 Multica 的 Personal Access Tokens 设置页创建 PAT。登录态保存在宿主机的 `./data/.multica`；请不要把 token 直接写进命令行或日志。登录成功后 Make target 会重启 daemon，使它立即发现 PATH 上的 Codex、Claude、OpenCode 等 agent CLI。
+
+如使用自托管 Multica，可先在容器中设置非敏感服务器地址，再登录：
+
+```bash
+docker compose exec multica-daemon multica config set server_url https://api.example.com
+docker compose exec multica-daemon multica config set app_url https://app.example.com
+make multica.login
+```
+
+daemon 只需要向 Multica API/实时连接端点和代码托管服务发起出站 HTTPS/WSS 连接，不需要暴露新的入站端口。代理、DNS 和 CA 配置需保证 `multica-daemon` 容器能访问这些地址。
+
+### 生命周期、状态和日志
+
+```bash
+make multica.status   # daemon JSON 状态、runtime 和 watched workspace
+make multica.logs     # supervisor 与 daemon 日志
+make multica.restart  # 重启并重新检测 agent CLI
+make multica.stop     # 单独停止 daemon 服务
+make multica.smoke    # 检查 CLI、版本和持久化目录可写性
+```
+
+`docker compose ps` 的 `multica-daemon` health 状态来自 `multica daemon status`。未完成登录时 supervisor 会保持运行并等待认证，该服务显示 unhealthy 是预期行为；登录后应变为 healthy。
+
+### 最小端到端验证
+
+1. `make multica.status` 确认 daemon 为 running，至少发现一个 agent CLI，并 watch 到目标 workspace。
+2. 在 Multica 的 Runtimes 页面确认名为 `Devcontainer` / `devcontainer` 的环境在线。
+3. 将一个测试 issue 分配给该 runtime，让 agent 执行 `printf 'multica-ok\n' > /home/ubuntu/multica_workspaces/remote-smoke.txt && cat /home/ubuntu/multica_workspaces/remote-smoke.txt`。
+4. 执行 `make restart`，然后再次运行 `make multica.status`，并确认上述文件仍存在。
+
+这同时验证远程命令、文件读写、重启恢复和持久化。
+
+### 持久化与安全边界
+
+- `./data/.multica` → `~/.multica`：CLI 配置、PAT 和 daemon 状态。
+- `./data/multica_workspaces` → `~/multica_workspaces`：daemon checkout、任务工作目录和约定的 smoke 文件。
+- 现有 `./data/.codex`、`.claude`、`.ssh` 等挂载同时提供 agent 登录态；这些目录全部被 `.gitignore` 排除。
+- `/workspace` 继续映射宿主机工作区；容器重启不会删除它。`make destroy` 会删除 Compose named volume，但 bind-mounted `./data` 不会被删除。
+- 不要把 PAT 放入 `.env`、Dockerfile、Compose environment、Kubernetes Secret 模板或 issue 日志；使用交互登录并限制 `./data` 的宿主机访问权限。
+
+### 故障排查和清理
+
+- 一直等待认证：运行 `make multica.login`，然后看 `make multica.logs`。
+- 没有 runtime：在 daemon 容器内运行 `command -v codex`（或其他 agent CLI），再执行 `make multica.restart`。
+- daemon 离线：检查 `make multica.status`、DNS/代理/系统时间和到 Multica 服务的出站连接。
+- 磁盘增长：运行 `docker compose exec multica-daemon multica daemon disk-usage`，按需清理已经完成且不再需要的 task workspace。
+- 撤销本机认证：运行 `docker compose exec multica-daemon multica auth logout`，随后 `make multica.stop`。需要彻底清理时，在确认备份后手动删除 `./data/.multica` 和 `./data/multica_workspaces`；仓库不会自动删除这些数据。
+
 ## Docker
 
 - Docker daemon 由 `docker:28-dind` sidecar 提供，`app` 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
@@ -114,7 +178,7 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 
 - 集群：`oracle-arm1`（2 节点 k3s，Traefik + cert-manager + Sealed Secrets 均为集群已有组件），namespace `devcontainer`；OpenCode 使用 `https://ai.hdgcs.com`，OpenClaw 使用 `https://claw.hdgcs.com`。
 - 只有单一环境，不做 stg/prod 分层；根目录 `kustomization.yaml` 在 `deploy/` 基础资源之上生成工具配置。
-- 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.local/.npm/.ssh/.vscode-server` 等目录及 `.claude.json`）、`openclaw-data-pvc`（8Gi，挂载到 `~/.openclaw`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。四者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。
+- 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.local/.multica/.npm/.ssh/.vscode-server`、`~/multica_workspaces` 等目录及 `.claude.json`）、`openclaw-data-pvc`（8Gi，挂载到 `~/.openclaw`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。四者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。
 - 配置：根目录 Kustomize overlay 从 `config/` 生成带内容哈希的 ConfigMap，挂载 OpenCode、Git、Claude 和 Codex 配置；配置变化会触发 Pod 滚动更新。
 - 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）；OpenClaw Gateway 复用该 Secret 值作为 `OPENCLAW_GATEWAY_PASSWORD`，并共享 `home-data-pvc` 中持久化的 Claude Code CLI 登录态。密码不在仓库里。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`app` 和 `openclaw` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
@@ -129,7 +193,12 @@ make deploy.apply    # kubectl apply -k ./ 并等待 rollout
 make deploy.status   # 查看 Pod/Service/Ingress/PVC
 make deploy.logs     # 查看 app 容器日志
 make deploy.bash     # 进入集群里的 app 容器
+make deploy.multica-login   # 首次安全输入 PAT，并滚动重启 Pod
+make deploy.multica-status  # 查询 daemon 状态
+make deploy.multica-logs    # 查看 daemon 日志
 ```
+
+Kubernetes 中的 daemon 是同一 Pod 内的独立 sidecar，使用 `home-data-pvc` 保存认证和任务目录；进程异常由入口脚本恢复，容器异常由 kubelet 恢复。未配置认证时 sidecar 会等待而不会 CrashLoop。首次部署完成后运行 `make deploy.multica-login`，再用 status 和 Runtimes 页面确认在线。
 
 修改 `deploy/app-secret.yaml`（明文，已被 `deploy/.gitignore` 排除）后，用 `make deploy.encode` 重新生成 `deploy/app-sealed-secret.yaml`。
 
