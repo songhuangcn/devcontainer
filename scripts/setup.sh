@@ -27,7 +27,10 @@ create_env() {
 prepare_persistent_files() {
   local file
 
-  mkdir -p "${DATA_DIR}/.openclaw"
+  mkdir -p \
+    "${DATA_DIR}/.multica" \
+    "${DATA_DIR}/.openclaw" \
+    "${DATA_DIR}/multica_workspaces"
 
   for file in "${PERSISTENT_FILES[@]}"; do
     touch "${DATA_DIR}/${file}"

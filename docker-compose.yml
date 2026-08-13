@@ -1,4 +1,27 @@
 name: workspace-devcontainer
+x-home-volumes: &home-volumes
+  - ..:/workspace
+  - ./data/.agents:/home/ubuntu/.agents
+  - ./data/.cache:/home/ubuntu/.cache
+  - ./data/.claude:/home/ubuntu/.claude
+  - ./data/.codex:/home/ubuntu/.codex
+  - ./data/.config:/home/ubuntu/.config
+  - ./data/.copilot:/home/ubuntu/.copilot
+  - ./data/.lark-cli:/home/ubuntu/.lark-cli
+  - ./data/.local:/home/ubuntu/.local
+  - ./data/.multica:/home/ubuntu/.multica
+  - ./data/.npm:/home/ubuntu/.npm
+  - ./data/.openclaw:/home/ubuntu/.openclaw
+  - ./data/.ssh:/home/ubuntu/.ssh
+  - ./data/.vscode-server/data:/home/ubuntu/.vscode-server/data
+  - ./data/.vscode-server/extensions:/home/ubuntu/.vscode-server/extensions
+  - ./data/.claude.json:/home/ubuntu/.claude.json
+  - ./data/multica_workspaces:/home/ubuntu/multica_workspaces
+  - ./config/.gitconfig:/home/ubuntu/.gitconfig
+  - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
+  - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml
+  - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
+
 services:
   app:
     # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
@@ -22,29 +45,29 @@ services:
       timeout: 3s
       retries: 5
       start_period: 20s
-    volumes:
-      - ..:/workspace
-      # 只持久化用户数据目录；.bashrc/.profile 等 shell 启动文件继续使用镜像内版本。
-      - ./data/.agents:/home/ubuntu/.agents
-      - ./data/.cache:/home/ubuntu/.cache
-      - ./data/.claude:/home/ubuntu/.claude
-      - ./data/.codex:/home/ubuntu/.codex
-      - ./data/.config:/home/ubuntu/.config
-      - ./data/.copilot:/home/ubuntu/.copilot
-      - ./data/.lark-cli:/home/ubuntu/.lark-cli
-      - ./data/.local:/home/ubuntu/.local
-      - ./data/.npm:/home/ubuntu/.npm
-      - ./data/.openclaw:/home/ubuntu/.openclaw
-      - ./data/.ssh:/home/ubuntu/.ssh
-      # 保留镜像预装的 VS Code Server bin，只持久化用户数据和扩展。
-      - ./data/.vscode-server/data:/home/ubuntu/.vscode-server/data
-      - ./data/.vscode-server/extensions:/home/ubuntu/.vscode-server/extensions
-      - ./data/.claude.json:/home/ubuntu/.claude.json
-      # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
-      - ./config/.gitconfig:/home/ubuntu/.gitconfig
-      - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
-      - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml
-      - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
+    # 只持久化用户数据目录；.bashrc/.profile 等 shell 启动文件继续使用镜像内版本。
+    volumes: *home-volumes
+  multica-daemon:
+    image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
+    build: .
+    env_file:
+      - .env
+    environment:
+      DOCKER_HOST: tcp://docker:2375
+      MULTICA_AGENT_RUNTIME_NAME: ${MULTICA_AGENT_RUNTIME_NAME:-Devcontainer}
+      MULTICA_DAEMON_DEVICE_NAME: ${MULTICA_DAEMON_DEVICE_NAME:-devcontainer}
+      MULTICA_DAEMON_MAX_CONCURRENT_TASKS: ${MULTICA_DAEMON_MAX_CONCURRENT_TASKS:-4}
+      MULTICA_WORKSPACES_ROOT: /home/ubuntu/multica_workspaces
+    init: true
+    restart: unless-stopped
+    entrypoint: /usr/local/bin/multica-daemon-entrypoint
+    healthcheck:
+      test: ["CMD", "multica", "daemon", "status", "--output", "json"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    volumes: *home-volumes
   docker:
     image: docker:28-dind
     privileged: true

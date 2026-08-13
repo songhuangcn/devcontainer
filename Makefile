@@ -26,6 +26,31 @@ restart-opencode:
 logs:
 	$(COMPOSE) logs -f app
 
+.PHONY: multica.login
+multica.login:
+	$(COMPOSE) exec multica-daemon multica login --token
+	$(COMPOSE) restart multica-daemon
+
+.PHONY: multica.status
+multica.status:
+	$(COMPOSE) exec multica-daemon multica daemon status --output json
+
+.PHONY: multica.logs
+multica.logs:
+	$(COMPOSE) logs -f multica-daemon
+
+.PHONY: multica.restart
+multica.restart:
+	$(COMPOSE) restart multica-daemon
+
+.PHONY: multica.stop
+multica.stop:
+	$(COMPOSE) stop multica-daemon
+
+.PHONY: multica.smoke
+multica.smoke:
+	$(COMPOSE) run --rm --no-deps --entrypoint /usr/local/bin/multica-daemon-entrypoint multica-daemon --check
+
 .PHONY: restart
 restart: stop start
 
@@ -87,3 +112,16 @@ deploy.logs: # 查看 app 容器日志
 .PHONY: deploy.bash
 deploy.bash: # 进入集群里运行的 app 容器
 	kubectl exec -it -n devcontainer deployment/app -c app -- bash
+
+.PHONY: deploy.multica-login
+deploy.multica-login: # 在终端安全输入 PAT，并将登录态保存到 home-data-pvc
+	kubectl exec -it -n devcontainer deployment/app -c multica-daemon -- multica login --token
+	kubectl rollout restart deployment/app -n devcontainer
+
+.PHONY: deploy.multica-status
+deploy.multica-status:
+	kubectl exec -n devcontainer deployment/app -c multica-daemon -- multica daemon status --output json
+
+.PHONY: deploy.multica-logs
+deploy.multica-logs:
+	kubectl logs -n devcontainer deployment/app -c multica-daemon -f
