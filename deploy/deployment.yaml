@@ -43,7 +43,51 @@ spec:
       initContainers:
       - name: fix-ownership
         image: busybox:1.36
-        command: ["chown", "-R", "1000:1000", "/mnt/workspace", "/mnt/home-data"]
+        # Kubernetes 不会自动创建 subPath；先准备全部 home-data 目录和文件，
+        # 再统一修正 owner，但不改变 .ssh 等敏感文件的权限位。
+        command:
+        - sh
+        - -c
+        - |
+          mkdir -p \
+            /mnt/home-data/.agents \
+            /mnt/home-data/.cache \
+            /mnt/home-data/.claude \
+            /mnt/home-data/.codex \
+            /mnt/home-data/.config \
+            /mnt/home-data/.copilot \
+            /mnt/home-data/.lark-cli \
+            /mnt/home-data/.multica \
+            /mnt/home-data/.npm \
+            /mnt/home-data/.openclaw \
+            /mnt/home-data/.ssh \
+            /mnt/home-data/.vscode-server/data \
+            /mnt/home-data/.vscode-server/extensions \
+            /mnt/home-data/lark-cli \
+            /mnt/home-data/multica_workspaces \
+            /mnt/home-data/opencode
+          touch /mnt/home-data/.claude.json
+          chown 1000:1000 \
+            /mnt/workspace \
+            /mnt/home-data \
+            /mnt/home-data/.agents \
+            /mnt/home-data/.cache \
+            /mnt/home-data/.claude \
+            /mnt/home-data/.claude.json \
+            /mnt/home-data/.codex \
+            /mnt/home-data/.config \
+            /mnt/home-data/.copilot \
+            /mnt/home-data/.lark-cli \
+            /mnt/home-data/.multica \
+            /mnt/home-data/.npm \
+            /mnt/home-data/.openclaw \
+            /mnt/home-data/.ssh \
+            /mnt/home-data/.vscode-server \
+            /mnt/home-data/.vscode-server/data \
+            /mnt/home-data/.vscode-server/extensions \
+            /mnt/home-data/lark-cli \
+            /mnt/home-data/multica_workspaces \
+            /mnt/home-data/opencode
         volumeMounts:
         - name: workspace
           mountPath: /mnt/workspace
@@ -59,16 +103,85 @@ spec:
           mountPath: /home/ubuntu/.openclaw
           subPath: .openclaw
       containers:
-      - name: opencode
-        image: songhuangcn/devcontainer
-        imagePullPolicy: Always
+      # 三个应用容器共享镜像、环境来源和持久化挂载；命令、探针和资源独立配置。
+      - <<: &app-base
+          image: songhuangcn/devcontainer
+          imagePullPolicy: Always
+          envFrom:
+          - configMapRef:
+              name: app-configmap
+          - secretRef:
+              name: app-secret
+          volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: home-data
+            mountPath: /home/ubuntu/.agents
+            subPath: .agents
+          - name: home-data
+            mountPath: /home/ubuntu/.cache
+            subPath: .cache
+          - name: home-data
+            mountPath: /home/ubuntu/.claude
+            subPath: .claude
+          - name: home-data
+            mountPath: /home/ubuntu/.codex
+            subPath: .codex
+          - name: home-data
+            mountPath: /home/ubuntu/.config
+            subPath: .config
+          - name: home-data
+            mountPath: /home/ubuntu/.copilot
+            subPath: .copilot
+          - name: home-data
+            mountPath: /home/ubuntu/.lark-cli
+            subPath: .lark-cli
+          - name: home-data
+            mountPath: /home/ubuntu/.local/share/opencode
+            subPath: opencode
+          - name: home-data
+            mountPath: /home/ubuntu/.local/share/lark-cli
+            subPath: lark-cli
+          - name: home-data
+            mountPath: /home/ubuntu/.multica
+            subPath: .multica
+          - name: home-data
+            mountPath: /home/ubuntu/.npm
+            subPath: .npm
+          - name: home-data
+            mountPath: /home/ubuntu/.openclaw
+            subPath: .openclaw
+          - name: home-data
+            mountPath: /home/ubuntu/.ssh
+            subPath: .ssh
+          - name: home-data
+            mountPath: /home/ubuntu/.vscode-server/data
+            subPath: .vscode-server/data
+          - name: home-data
+            mountPath: /home/ubuntu/.vscode-server/extensions
+            subPath: .vscode-server/extensions
+          - name: home-data
+            mountPath: /home/ubuntu/.claude.json
+            subPath: .claude.json
+          - name: home-data
+            mountPath: /home/ubuntu/multica_workspaces
+            subPath: multica_workspaces
+          # 可提交的工具配置由根目录 kustomization 从 config/ 生成。
+          - name: config-data
+            mountPath: /home/ubuntu/.gitconfig
+            subPath: .gitconfig
+          - name: config-data
+            mountPath: /home/ubuntu/.claude/settings.json
+            subPath: claude-settings.json
+          - name: config-data
+            mountPath: /home/ubuntu/.codex/config.toml
+            subPath: codex-config.toml
+          - name: config-data
+            mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
+            subPath: opencode.jsonc
+        name: opencode
         command: ["opencode"]
         args: ["web", "--hostname", "0.0.0.0", "--port", "4096"]
-        envFrom:
-        - configMapRef:
-            name: app-configmap
-        - secretRef:
-            name: app-secret
         ports:
         - containerPort: 4096
           name: opencode
@@ -95,67 +208,8 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "1"
-        volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-        - name: home-data
-          mountPath: /home/ubuntu/.agents
-          subPath: .agents
-        - name: home-data
-          mountPath: /home/ubuntu/.cache
-          subPath: .cache
-        - name: home-data
-          mountPath: /home/ubuntu/.claude
-          subPath: .claude
-        - name: home-data
-          mountPath: /home/ubuntu/.codex
-          subPath: .codex
-        - name: home-data
-          mountPath: /home/ubuntu/.config
-          subPath: .config
-        - name: home-data
-          mountPath: /home/ubuntu/.copilot
-          subPath: .copilot
-        - name: home-data
-          mountPath: /home/ubuntu/.lark-cli
-          subPath: .lark-cli
-        - name: home-data
-          mountPath: /home/ubuntu/.multica
-          subPath: .multica
-        - name: home-data
-          mountPath: /home/ubuntu/.npm
-          subPath: .npm
-        - name: home-data
-          mountPath: /home/ubuntu/.ssh
-          subPath: .ssh
-        - name: home-data
-          mountPath: /home/ubuntu/.vscode-server
-          subPath: .vscode-server
-        - name: home-data
-          mountPath: /home/ubuntu/.claude.json
-          subPath: .claude.json
-        - name: home-data
-          mountPath: /home/ubuntu/multica_workspaces
-          subPath: multica_workspaces
-        - name: home-data
-          mountPath: /home/ubuntu/.openclaw
-          subPath: .openclaw
-        # 可提交的工具配置由根目录 kustomization 从 config/ 生成。
-        - name: config-data
-          mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
-          subPath: opencode.jsonc
-        - name: config-data
-          mountPath: /home/ubuntu/.gitconfig
-          subPath: .gitconfig
-        - name: config-data
-          mountPath: /home/ubuntu/.claude/settings.json
-          subPath: claude-settings.json
-        - name: config-data
-          mountPath: /home/ubuntu/.codex/config.toml
-          subPath: codex-config.toml
-      - name: openclaw
-        image: songhuangcn/devcontainer
-        imagePullPolicy: Always
+      - <<: *app-base
+        name: openclaw
         command: ["openclaw"]
         args: ["gateway", "--allow-unconfigured", "--bind", "lan", "--port", "18789", "--auth", "password"]
         env:
@@ -192,21 +246,8 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "1"
-        volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-        - name: home-data
-          mountPath: /home/ubuntu/.claude
-          subPath: .claude
-        - name: home-data
-          mountPath: /home/ubuntu/.claude.json
-          subPath: .claude.json
-        - name: home-data
-          mountPath: /home/ubuntu/.openclaw
-          subPath: .openclaw
-      - name: multica
-        image: songhuangcn/devcontainer
-        imagePullPolicy: Always
+      - <<: *app-base
+        name: multica
         command: ["sh", "-c"]
         args:
         - >-
@@ -231,48 +272,6 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1"
-        volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-        - name: home-data
-          mountPath: /home/ubuntu/.agents
-          subPath: .agents
-        - name: home-data
-          mountPath: /home/ubuntu/.claude
-          subPath: .claude
-        - name: home-data
-          mountPath: /home/ubuntu/.codex
-          subPath: .codex
-        - name: home-data
-          mountPath: /home/ubuntu/.config
-          subPath: .config
-        - name: home-data
-          mountPath: /home/ubuntu/.copilot
-          subPath: .copilot
-        - name: home-data
-          mountPath: /home/ubuntu/.multica
-          subPath: .multica
-        - name: home-data
-          mountPath: /home/ubuntu/.npm
-          subPath: .npm
-        - name: home-data
-          mountPath: /home/ubuntu/.ssh
-          subPath: .ssh
-        - name: home-data
-          mountPath: /home/ubuntu/multica_workspaces
-          subPath: multica_workspaces
-        - name: home-data
-          mountPath: /home/ubuntu/.claude.json
-          subPath: .claude.json
-        - name: config-data
-          mountPath: /home/ubuntu/.gitconfig
-          subPath: .gitconfig
-        - name: config-data
-          mountPath: /home/ubuntu/.claude/settings.json
-          subPath: claude-settings.json
-        - name: config-data
-          mountPath: /home/ubuntu/.codex/config.toml
-          subPath: codex-config.toml
       # Docker-in-Docker sidecar：与应用容器共享同一个 Pod network namespace，
       # opencode、openclaw 和 multica 通过 DOCKER_HOST=tcp://localhost:2375 连接
       - name: dind

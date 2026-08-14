@@ -20,6 +20,8 @@ x-app-base: &app-base
       - ./data/.config:/home/ubuntu/.config
       - ./data/.copilot:/home/ubuntu/.copilot
       - ./data/.lark-cli:/home/ubuntu/.lark-cli
+      - ./data/opencode:/home/ubuntu/.local/share/opencode
+      - ./data/lark-cli:/home/ubuntu/.local/share/lark-cli
       - ./data/.multica:/home/ubuntu/.multica
       - ./data/.npm:/home/ubuntu/.npm
       - ./data/.openclaw:/home/ubuntu/.openclaw

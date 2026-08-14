@@ -50,7 +50,7 @@ make setup
 
 必需存在的本地文件包括 `.env` 和 `./data/.claude.json`。如果不想运行 `make setup`，也可以手动创建这些文件。OpenCode、Git、Claude 和 Codex 的可共享配置位于 `./config`，随版本库提供。OpenClaw 状态持久化在 `./data/.openclaw`。
 
-镜像内置工具链由 `/opt/mise` 管理，不放在 `/home/ubuntu` 下。`docker-compose.yml` 只挂载选定的用户数据路径，因此 `.bashrc`、`.profile` 等 shell 启动文件继续使用镜像内版本。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
+`docker-compose.yml` 不挂载完整的 `~/.local`，避免遮住镜像内置工具链；只把 OpenCode 和 Lark CLI 的持久化数据分别从 `./data/opencode`、`./data/lark-cli` 挂到 `~/.local/share` 下。`.bashrc`、`.profile` 等 shell 启动文件继续使用镜像内版本。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
 
 如果旧的 `./data/.bashrc`、`./data/.profile` 仍存在，它们不会再挂载到容器内。
 
@@ -135,7 +135,7 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 
 - 集群：`oracle-arm1`（2 节点 k3s，Traefik + cert-manager + Sealed Secrets 均为集群已有组件），namespace `devcontainer`；OpenCode 使用 `https://ai.hdgcs.com`，OpenClaw 使用 `https://claw.hdgcs.com`。
 - 只有单一环境，不做 stg/prod 分层；根目录 `kustomization.yaml` 在 `deploy/` 基础资源之上生成工具配置。
-- 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.multica/.npm/.openclaw/.ssh/.vscode-server`、`~/multica_workspaces` 等目录及 `.claude.json`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。`~/.local` 不持久化，因为镜像内的 mise 和工具链安装在这里；挂载该目录会遮住镜像中的工具。
+- 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.multica/.npm/.openclaw/.ssh/.vscode-server`、`~/multica_workspaces` 等目录及 `.claude.json`，并单独持久化 `~/.local/share/opencode` 和 `~/.local/share/lark-cli`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。不挂载完整的 `~/.local`，避免遮住镜像中的 mise 和工具链。
 - 配置：根目录 Kustomize overlay 从 `config/` 生成带内容哈希的 ConfigMap，挂载 OpenCode、Git、Claude 和 Codex 配置；配置变化会触发 Pod 滚动更新。
 - 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）；OpenClaw Gateway 复用该 Secret 值作为 `OPENCLAW_GATEWAY_PASSWORD`，并共享 `home-data-pvc` 中持久化的 Claude Code CLI 登录态。密码不在仓库里。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode`、`openclaw` 和 `multica` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
