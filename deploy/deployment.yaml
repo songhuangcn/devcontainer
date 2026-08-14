@@ -210,14 +210,22 @@ spec:
       - name: multica
         image: songhuangcn/devcontainer
         imagePullPolicy: Always
-        command: ["multica"]
-        args: ["daemon", "start", "--foreground"]
+        command: ["sh", "-c"]
+        args:
+        - >-
+          until multica auth status >/dev/null 2>&1; do sleep 10; done;
+          exec multica daemon start --foreground
         env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
         livenessProbe:
           exec:
-            command: ["multica", "daemon", "status", "--output", "json"]
+            command:
+            - sh
+            - -c
+            - >-
+              ! multica auth status >/dev/null 2>&1 ||
+              multica daemon status --output json >/dev/null
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
