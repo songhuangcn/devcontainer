@@ -46,6 +46,10 @@ multica.stop:
 multica.smoke:
 	$(COMPOSE) run --rm --no-deps multica multica version
 
+.PHONY: agent-cli.smoke
+agent-cli.smoke:
+	$(COMPOSE) run --rm --no-deps multica smoke-agent-cli-launchers
+
 .PHONY: restart
 restart: stop start
 
