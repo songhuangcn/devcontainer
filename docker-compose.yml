@@ -62,9 +62,9 @@ services:
       start_period: 20s
   multica:
     <<: *app-base
-    command: ["sh", "-c", "until multica auth status >/dev/null 2>&1; do sleep 10; done; exec multica daemon start --foreground"]
+    command: ["multica", "daemon", "start", "--foreground"]
     healthcheck:
-      test: ["CMD-SHELL", "! multica auth status >/dev/null 2>&1 || multica daemon status --output json >/dev/null"]
+      test: ["CMD", "multica", "daemon", "status", "--output", "json"]
       interval: 15s
       timeout: 5s
       retries: 3

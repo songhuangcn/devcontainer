@@ -100,7 +100,7 @@ make build
 
 ## Multica daemon
 
-镜像通过 Multica 官方安装脚本安装最新 CLI，daemon 在独立的 `multica` service 中以前台模式运行；未认证时 service 会保持运行并等待登录。首次使用时执行：
+镜像通过 Multica 官方安装脚本安装最新 CLI，daemon 在独立的 `multica` service 中以前台模式运行。首次使用时执行：
 
 ```bash
 make setup
