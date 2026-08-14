@@ -213,8 +213,7 @@ spec:
         command: ["sh", "-c"]
         args:
         - >-
-          until multica auth status >/dev/null 2>&1; do sleep 10; done;
-          exec multica daemon start --foreground
+          until multica daemon start --foreground; do sleep 10; done
         env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -223,9 +222,7 @@ spec:
             command:
             - sh
             - -c
-            - >-
-              ! multica auth status >/dev/null 2>&1 ||
-              multica daemon status --output json >/dev/null
+            - test -w /home/ubuntu/.multica
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
