@@ -248,8 +248,13 @@ spec:
             cpu: "1"
       - <<: *app-base
         name: multica
-        command: ["multica"]
-        args: ["daemon", "start", "--foreground"]
+        command: ["sh", "-c"]
+        args:
+        - >-
+          if ! multica auth status >/dev/null 2>&1; then
+            multica login --token "$MULTICA_TOKEN";
+          fi;
+          exec multica daemon start --foreground
         env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375

@@ -100,15 +100,14 @@ make build
 
 ## Multica daemon
 
-镜像通过 Multica 官方安装脚本安装最新 CLI，daemon 在独立的 `multica` service 中以前台模式运行。首次使用时执行：
+镜像通过 Multica 官方安装脚本安装最新 CLI，daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
 
 ```bash
 make setup
 make start
-make multica.login
 ```
 
-`make multica.login` 会交互读取 PAT，登录态保存在 `./data/.multica`，任务目录保存在 `./data/multica_workspaces`；不要把 PAT 写入 `.env` 或仓库。常用命令：
+请先从 `.env.sample` 复制 `.env` 并填写 `MULTICA_TOKEN`。登录态保存在 `./data/.multica`，任务目录保存在 `./data/multica_workspaces`；不要提交 `.env`。常用命令：
 
 ```bash
 make multica.status
@@ -137,7 +136,7 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 只有单一环境，不做 stg/prod 分层；根目录 `kustomization.yaml` 在 `deploy/` 基础资源之上生成工具配置。
 - 存储：`workspace-pvc`（15Gi，空卷，不含本地历史数据）、`home-data-pvc`（8Gi，通过 subPath 对应 `~/.agents/.cache/.claude/.codex/.config/.copilot/.lark-cli/.multica/.npm/.openclaw/.ssh/.vscode-server`、`~/multica_workspaces` 等目录及 `.claude.json`，并单独持久化 `~/.local/share/opencode` 和 `~/.local/share/lark-cli`）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。不挂载完整的 `~/.local`，避免遮住镜像中的 mise 和工具链。
 - 配置：根目录 Kustomize overlay 从 `config/` 生成带内容哈希的 ConfigMap，挂载 OpenCode、Git、Claude 和 Codex 配置；配置变化会触发 Pod 滚动更新。
-- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）；OpenClaw Gateway 复用该 Secret 值作为 `OPENCLAW_GATEWAY_PASSWORD`，并共享 `home-data-pvc` 中持久化的 Claude Code CLI 登录态。密码不在仓库里。
+- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）；OpenClaw Gateway 复用该 Secret 值作为 `OPENCLAW_GATEWAY_PASSWORD`。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `home-data-pvc`。Secret 明文不在仓库里。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode`、`openclaw` 和 `multica` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
 - 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401；OpenClaw 使用无需鉴权的 `/healthz` 和 `/readyz`。
 - 首次上线时手动把本地 `./data` 下的 `.ssh`、`.claude`/`.codex` 登录态、`gh`/`lark-cli` 配置等**凭据**（不含 `.cache`/`.local`/`.vscode-server`/`.claude` 里的会话历史等可再生数据）一次性迁移进了 `home-data-pvc`；之后的更新走 CI，不再涉及这类手动数据迁移。
@@ -150,12 +149,11 @@ make deploy.apply    # kubectl apply -k ./ 并等待 rollout
 make deploy.status   # 查看 Pod/Service/Ingress/PVC
 make deploy.logs     # 查看 opencode 容器日志
 make deploy.bash     # 进入集群里的 opencode 容器
-make deploy.multica-login   # 首次安全输入 PAT，并滚动重启 Pod
 make deploy.multica-status  # 查询 daemon 状态
 make deploy.multica-logs    # 查看 daemon 日志
 ```
 
-Kubernetes Pod 内分别运行 `opencode`、`openclaw` 和 `multica` 容器；Multica 认证、任务目录和 OpenClaw 状态均通过现有 `home-data-pvc` 的 subPath 持久化。首次部署后运行 `make deploy.multica-login`，再用 status 和 Runtimes 页面确认在线。
+Kubernetes Pod 内分别运行 `opencode`、`openclaw` 和 `multica` 容器；Multica 认证、任务目录和 OpenClaw 状态均通过现有 `home-data-pvc` 的 subPath 持久化。首次部署会使用 `MULTICA_TOKEN` 自动登录，之后可用 status 和 Runtimes 页面确认在线。
 
 修改 `deploy/app-secret.yaml`（明文，已被 `deploy/.gitignore` 排除）后，用 `make deploy.encode` 重新生成 `deploy/app-sealed-secret.yaml`。
 

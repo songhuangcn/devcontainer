@@ -26,11 +26,6 @@ restart-opencode:
 logs:
 	$(COMPOSE) logs -f opencode
 
-.PHONY: multica.login
-multica.login:
-	$(COMPOSE) run --rm --no-deps multica multica login --token
-	$(COMPOSE) restart multica
-
 .PHONY: multica.status
 multica.status:
 	$(COMPOSE) exec multica multica daemon status --output json
@@ -112,11 +107,6 @@ deploy.logs: # 查看 opencode 容器日志
 .PHONY: deploy.bash
 deploy.bash: # 进入集群里的 opencode 容器
 	kubectl exec -it -n devcontainer deployment/app -c opencode -- bash
-
-.PHONY: deploy.multica-login
-deploy.multica-login: # 在终端安全输入 PAT，并将登录态保存到 home-data-pvc
-	kubectl exec -it -n devcontainer deployment/app -c opencode -- multica login --token
-	kubectl rollout restart deployment/app -n devcontainer
 
 .PHONY: deploy.multica-status
 deploy.multica-status:
