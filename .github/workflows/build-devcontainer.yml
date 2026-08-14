@@ -82,3 +82,5 @@ jobs:
         run: |
           kubectl get pods -n devcontainer
           kubectl get svc -n devcontainer
+          kubectl exec -n devcontainer deployment/app -c multica -- multica daemon status --output json
+          kubectl exec -n devcontainer deployment/app -c multica -- smoke-agent-cli-launchers

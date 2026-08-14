@@ -95,11 +95,18 @@ RUN curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts
 RUN curl -fsSL https://mise.run | sh
 
 COPY mise.toml /etc/mise/config.toml
+COPY --chmod=755 scripts/smoke-agent-cli-launchers.sh /usr/local/bin/smoke-agent-cli-launchers
 
 RUN mise install \
+    # Multica resolves provider executables to their canonical paths before launch.
+    # A mise shim therefore turns back into the mise binary and is misinterpreted
+    # as a task invocation. Put direct tool links ahead of the shim directory.
+    && for tool in codex claude opencode openclaw; do \
+        ln -sf "$(mise which "${tool}")" "/home/ubuntu/.local/bin/${tool}"; \
+    done \
     && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
     && sudo ln -sf "$(mise which docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
-    && codex --version | grep -q '^codex-cli ' \
+    && smoke-agent-cli-launchers \
     && mise cache clear
 
 RUN mise exec -- python -m pip install --no-cache-dir \
