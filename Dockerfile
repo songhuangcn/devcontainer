@@ -62,9 +62,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash \
-    && multica version
-
 ARG SOURCE_HAN_SERIF_VERSION=2.003R
 ARG SOURCE_HAN_SERIF_TC_SHA256=71354ed752104c8a3cbcff18943c6110d179d01cc6eaaf1aff7ea14c4a447879
 RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
@@ -79,9 +76,6 @@ RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-RUN mkdir -p /opt/mise/bin /opt/mise/config \
-    && chown -R ubuntu:ubuntu /opt/mise
-
 USER ubuntu
 
 WORKDIR /workspace
@@ -91,23 +85,21 @@ ENV TZ=Asia/Shanghai \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8 \
     SHELL=/bin/bash \
-    MISE_BASE_DIR=/opt/mise \
-    MISE_INSTALL_PATH=/opt/mise/bin/mise \
-    MISE_DATA_DIR=/opt/mise \
-    MISE_CONFIG_DIR=/opt/mise/config \
-    MISE_CACHE_DIR=/opt/mise/cache \
-    MISE_STATE_DIR=/opt/mise/state \
-    PATH=/opt/mise/bin:/opt/mise/shims:$PATH \
+    PATH=/home/ubuntu/.local/bin:/home/ubuntu/.local/share/mise/shims:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN curl https://mise.run | sh
+RUN curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash \
+    && multica version
 
-COPY --chown=ubuntu:ubuntu mise.toml /opt/mise/config/mise.toml
+RUN curl -fsSL https://mise.run | sh
+
+COPY mise.toml /etc/mise/config.toml
 
 RUN mise install \
     && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
     && sudo ln -sf "$(mise which docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
+    && codex --version | grep -q '^codex-cli ' \
     && mise cache clear
 
 RUN mise exec -- python -m pip install --no-cache-dir \

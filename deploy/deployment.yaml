@@ -120,9 +120,6 @@ spec:
           mountPath: /home/ubuntu/.lark-cli
           subPath: .lark-cli
         - name: home-data
-          mountPath: /home/ubuntu/.local
-          subPath: .local
-        - name: home-data
           mountPath: /home/ubuntu/.multica
           subPath: .multica
         - name: home-data
@@ -252,9 +249,6 @@ spec:
         - name: home-data
           mountPath: /home/ubuntu/.copilot
           subPath: .copilot
-        - name: home-data
-          mountPath: /home/ubuntu/.local
-          subPath: .local
         - name: home-data
           mountPath: /home/ubuntu/.multica
           subPath: .multica
