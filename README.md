@@ -7,7 +7,7 @@
 - `docker-compose.yml`：用共享 base 配置分别启动 `opencode`、`multica`，并启动 Docker-in-Docker service `docker`。
 - `Dockerfile`：构建开发工具镜像，内置 OpenCode、常用 CLI、Docker CLI、Compose plugin 和论文输出工具链。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
-- `scripts/setup.sh`：准备本地 `./data` 下的持久化用户数据路径。
+- `scripts/setup.sh`：创建 `.env`，并预建 `./data` 下 config 嵌套挂载所需的父目录。
 - `dockerfiles/Dockerfile.java`：Java 扩展镜像。
 
 ## 镜像
@@ -46,13 +46,13 @@ docker compose version
 make setup
 ```
 
-`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并创建 Compose 会挂载到 `/home/ubuntu` 的必需空文件和持久化目录，确保目录由当前用户创建并可由容器写入。
+`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data/.claude`、`./data/.codex`、`./data/.config/opencode`。这三个目录是 `./config` 那四条嵌套挂载的父目录：缺失时 Docker daemon 会以 root 身份创建挂载点父目录，容器内的 `ubuntu` 用户就写不进去。
 
-必需存在的本地文件包括 `.env` 和 `./data/.claude.json`。如果不想运行 `make setup`，也可以手动创建这些文件。OpenCode、Git、Claude 和 Codex 的可共享配置位于 `./config`，随版本库提供。
+必需存在的只有 `.env` 和上面那三个目录。如果不想运行 `make setup`，也可以手动创建。OpenCode、Git、Claude 和 Codex 的可共享配置位于 `./config`，随版本库提供。
 
-`docker-compose.yml` 不挂载完整的 `~/.local`，避免遮住镜像内置工具链；只把 OpenCode 和 Lark CLI 的持久化数据分别从 `./data/opencode`、`./data/lark-cli` 挂到 `~/.local/share` 下。`.bashrc`、`.profile` 等 shell 启动文件继续使用镜像内版本。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
+`docker-compose.yml` 把 `./data` 整挂到 `/home/ubuntu`。镜像自带的工具链装在 `/opt`（`/opt/mise`、`/opt/agent-bin`、`/opt/home-skel`），不会被这个卷遮住，所以新增工具不再需要补挂载。首次启动时镜像的 ENTRYPOINT `devcontainer-home-init` 会把 `/opt/home-skel` 补进卷里——只补缺失项，`./data` 里已有的文件（包括你自己改过的 `.bashrc`、`.profile`）永远不会被覆盖。这也意味着镜像升级带来的 `.bashrc` 改动不会推送给已有的 `./data`。
 
-如果旧的 `./data/.bashrc`、`./data/.profile` 仍存在，它们不会再挂载到容器内。
+`~/.local/bin` 在 login shell 中排在镜像工具链之前（Ubuntu `.profile` 的默认行为），所以 `pip install --user`、`uv tool install`、`pipx` 装的工具会盖过镜像自带的同名命令。Docker Compose plugin 的系统级入口位于 `/usr/local/lib/docker/cli-plugins/docker-compose`。
 
 启动容器、OpenCode Web 和 Multica daemon：
 
@@ -91,6 +91,100 @@ make update
 ```bash
 make build
 ```
+
+## 一次性数据迁移（从旧的 21 条选择性挂载切到整挂 home）
+
+只在从旧布局切过来时做一次，做完就不用再看这一节。策略是**两侧都从空目录开始，
+只把凭据白名单捞过来**，旧数据完整保留作为退路。
+
+先停容器并备份（`cp -Rpc` 在 APFS 上是 clone，瞬时完成且保住权限位）：
+
+```bash
+make down
+cp -Rpc data ../devcontainer-data-backup-$(date +%F)
+mv data data.old && mkdir data
+```
+
+**必须先 `make down`**：`opencode.db` 是 WAL 模式，运行中拷贝会拿到不一致的快照。
+
+用 `tar -T` 按清单捞（不要用 macOS 自带的 `rsync`——它其实是 openrsync，
+`--files-from` 不递归子目录，还会把 `.ssh` 的 700 放宽成 755）：
+
+```bash
+cat > /tmp/dc-migrate.list <<'LIST'
+.agents
+.claude
+.claude.json
+.codex/auth.json
+.codex/config.toml
+.codex/history.jsonl
+.codex/memories_1.sqlite
+.codex/sessions
+.codex/skills
+.config/gh
+.config/opencode/.gitignore
+.config/opencode/AGENTS.md
+.config/opencode/package.json
+.config/opencode/package-lock.json
+.copilot
+.lark-cli/config.json
+.multica/config.json
+.ssh
+multica_workspaces
+LIST
+
+tar -C data.old --exclude '.DS_Store' -cf - -T /tmp/dc-migrate.list | tar -C data -xpf -
+```
+
+另外两处路径要改（旧布局把它们放在 `data/` 顶层，新布局回到 `~/.local/share`）：
+
+```bash
+mkdir -p data/.local/share/lark-cli data/.local/share/opencode
+
+# master.key 丢了，两个 .enc 就永久解不开
+tar -C data.old/lark-cli --exclude '.DS_Store' -cf - .   | tar -C data/.local/share/lark-cli -xpf -
+
+# opencode.db 是 WAL 模式，三个文件必须一起拷
+cat > /tmp/dc-migrate-opencode.list <<'LIST'
+auth.json
+opencode.db
+opencode.db-shm
+opencode.db-wal
+storage
+snapshot
+worktree
+repos
+LIST
+tar -C data.old/opencode --exclude '.DS_Store' -cf - -T /tmp/dc-migrate-opencode.list   | tar -C data/.local/share/opencode -xpf -
+```
+
+**刻意不捞**：`.cache`、`.npm`、`.vscode-server`（VS Code 会自己重下）、`.local`
+（旧 mise 死数据）、`.claude.0801`、`.claude.json.0801`、`claude-backup-*.tar.gz`、
+`.gitconfig`（被 `config/.gitconfig` 遮住，且含 macOS 专用的 `hooksPath` 和已失效的
+credential helper）、`.config/{configstore,libreoffice,matplotlib,mplus,openspec}`、
+`.codex/{logs_2.sqlite*,cache,tmp,shell_snapshots}`、`opencode/opencode.db.bak-1.18.9`
+（1.5G 的旧备份）、`opencode/log`、`.bash_aliases`。
+
+然后正常启动并逐项验证登录态：
+
+```bash
+make setup && make start
+docker compose exec opencode bash -lc 'smoke-agent-cli-launchers; command -v mise; ls -A ~ | head -30'
+docker compose exec opencode stat -c "%a %n" /home/ubuntu/.ssh /home/ubuntu/.ssh/id_rsa
+```
+
+`.ssh` 应为 `700`、`id_rsa` 应为 `600`。再确认嵌套挂载没有被卷里的旧文件顶掉——
+四个文件的大小应等于 `config/` 下的对应文件，`mount` 输出里 `/home/ubuntu` 在前、
+四个文件在后：
+
+```bash
+docker compose exec opencode sh -c 'stat -c "%n %s" ~/.gitconfig ~/.claude/settings.json ~/.codex/config.toml ~/.config/opencode/opencode.jsonc; echo ---; mount | grep /home/ubuntu'
+```
+
+最后逐项过一遍：`ssh -T git@github.com`、`gh auth status`、`claude` 读得到登录态、
+`codex` 起得来、OpenCode Web 看得到历史会话、`multica auth status`、lark CLI 解得开
+`.enc`。全部无误后再删 `data.old`；`../devcontainer-data-backup-*` 留久一点。
+漏捞了随时从这两处补。
 
 ## Multica daemon
 
@@ -163,4 +257,4 @@ Kubernetes Pod 内分别运行 `opencode` 和 `multica` 容器；Multica 认证�
 - `data/*`
 - `agents/*`
 
-凭证、历史记录和用户数据默认放在 `./data`，并按需挂载到 `/home/ubuntu` 下的对应路径。可提交的工具配置放在 `./config`；镜像自带的 `.bashrc`、`.profile` 和工具链配置不会被本地 `./data` 覆盖。
+凭证、历史记录和用户数据默认放在 `./data`，整个目录挂载为容器里的 `/home/ubuntu`。可提交的工具配置放在 `./config`，以嵌套挂载的方式覆盖 `./data` 中的对应文件。镜像自带的工具链在 `/opt`，不受这个卷影响。
