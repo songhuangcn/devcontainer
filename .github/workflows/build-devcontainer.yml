@@ -55,6 +55,33 @@ jobs:
             songhuangcn/devcontainer:commit-${{ steps.vars.outputs.short_sha }}
             songhuangcn/devcontainer:latest
 
+      - name: Verify home initialization
+        run: |
+          # Variables expand inside the test container, not in the runner shell.
+          # shellcheck disable=SC2016
+          docker run --pull always --rm --entrypoint bash \
+            "songhuangcn/devcontainer:commit-${{ steps.vars.outputs.short_sha }}" \
+            -eu -o pipefail -c '
+              root=$(mktemp -d)
+              export HOME="$root/home"
+              mkdir -p "$HOME/.agents/skills/example" "$HOME/.claude/skills/legacy"
+              printf "agent instructions\n" > "$HOME/.agents/AGENTS.md"
+              printf "skill\n" > "$HOME/.agents/skills/example/SKILL.md"
+              printf "legacy instructions\n" > "$HOME/.claude/CLAUDE.md"
+              printf "legacy skill\n" > "$HOME/.claude/skills/legacy/SKILL.md"
+
+              DEVCONTAINER_SKEL="$root/skel" devcontainer-home-init true
+
+              test "$(readlink "$HOME/.claude/CLAUDE.md")" = "../.agents/AGENTS.md"
+              test -r "$HOME/.claude/CLAUDE.md"
+              test "$(readlink "$HOME/.claude/skills")" = "../.agents/skills"
+              test -f "$HOME/.claude/skills/example/SKILL.md"
+              test -f "$HOME/.claude/CLAUDE.md.before-agents-link"
+              test -f "$HOME/.claude/skills.before-agents-link/legacy/SKILL.md"
+
+              DEVCONTAINER_SKEL="$root/skel" devcontainer-home-init true
+            '
+
   deploy:
     runs-on: ubuntu-24.04
     needs: build
@@ -82,12 +109,3 @@ jobs:
         run: |
           kubectl get pods -n devcontainer
           kubectl get svc -n devcontainer
-          # Variables expand inside the target container, not in the runner shell.
-          # shellcheck disable=SC2016
-          kubectl exec -n devcontainer deployment/app -c opencode -- bash -eu -c '
-            test "$(readlink "$HOME/.claude/CLAUDE.md")" = "../.agents/AGENTS.md"
-            test -r "$HOME/.claude/CLAUDE.md"
-            test "$(readlink "$HOME/.claude/skills")" = "../.agents/skills"
-            skill_files=("$HOME"/.claude/skills/*/SKILL.md)
-            test -f "${skill_files[0]}"
-          '
