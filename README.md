@@ -133,6 +133,7 @@ cat > /tmp/dc-migrate.list <<'LIST'
 .copilot
 .lark-cli/config.json
 .multica/config.json
+.multica/daemon.id
 .ssh
 multica_workspaces
 LIST
@@ -203,7 +204,7 @@ make setup
 make start
 ```
 
-请先从 `.env.sample` 复制 `.env` 并填写 `MULTICA_TOKEN`。登录态保存在 `./data/.multica`，任务目录保存在 `./data/multica_workspaces`；不要提交 `.env`。常用命令：
+请先从 `.env.sample` 复制 `.env` 并填写 `MULTICA_TOKEN`。登录态保存在 `./data/.multica`，任务目录保存在 `./data/multica_workspaces`；不要提交 `.env`。`docker-compose.yml` 还固定了官方支持的 `MULTICA_DAEMON_ID` 和 `MULTICA_DAEMON_DEVICE_NAME`：前者复用已有 agent 绑定的 runtime 身份，后者避免容器重建后显示随机 hostname。只有部署完全独立的另一套本地实例时才在 `.env` 中同时覆盖这两项，并为 ID 使用新的 UUID。常用命令：
 
 ```bash
 make multica.status
@@ -237,6 +238,7 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 工具解析：mise 负责安装 provider CLI，但镜像会在 `/opt/agent-bin` 创建直达实际 CLI 的链接并置于 `/opt/mise/shims` 之前。Multica daemon 即使规范化可执行文件路径，也不会把 Codex 等 provider 错误启动成 mise task runner；可用 `smoke-agent-cli-launchers` 在任意空白目录复验。
 - 首启初始化：两个应用容器都**只写 `args:`，不写 `command:`**。`command:` 会覆盖镜像 ENTRYPOINT `devcontainer-home-init`，首启就不会把 `/opt/home-skel` 补进空卷（后果不重：卷里少了 dotfiles，Java 镜像少了 vscode-server 软链，VS Code 自己重下）。`livenessProbe.exec.command` 不经过 ENTRYPOINT，不受影响。
 - 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
+- Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID，并固定 `MULTICA_DAEMON_DEVICE_NAME=devcontainer.cloud`。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode` 和 `multica` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
 - 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401。
 - 数据迁移：切到 `user-data-pvc` 时，凭据是在集群内用一个同时挂了两个 PVC 的临时 Pod 从 `home-data-pvc` 捞过来的（白名单同「一次性数据迁移」那一节），老卷全程只读、不做任何修改。注意 `~/.local/share/lark-cli/master.key` 从来没有迁到集群，只在本地 `./data` 里有，要用 lark CLI 得单独上传。之后的更新走 CI，不再涉及手动数据迁移。

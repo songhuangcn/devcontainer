@@ -37,6 +37,11 @@ services:
       start_period: 20s
   multica:
     <<: *app-base
+    environment:
+      DOCKER_HOST: tcp://docker:2375
+      # daemon ID 是服务端 runtime 的去重键；复用原 ID 可保留已有 agent 绑定。
+      MULTICA_DAEMON_ID: ${MULTICA_DAEMON_ID:-019fffb2-a6d0-7045-8ff5-9b73fe675dd1}
+      MULTICA_DAEMON_DEVICE_NAME: ${MULTICA_DAEMON_DEVICE_NAME:-devcontainer.local}
     command:
       - sh
       - -c

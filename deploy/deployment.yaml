@@ -132,6 +132,11 @@ spec:
         env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
+        # Pod 名会随滚动更新变化；固定 daemon 身份才能复用已绑定 agent 的 runtime。
+        - name: MULTICA_DAEMON_ID
+          value: 019fff1d-364f-7279-83a7-d79613c153ac
+        - name: MULTICA_DAEMON_DEVICE_NAME
+          value: devcontainer.cloud
         livenessProbe:
           exec:
             command: ["multica", "daemon", "status", "--output", "json"]
