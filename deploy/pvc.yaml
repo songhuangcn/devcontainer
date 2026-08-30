@@ -26,6 +26,27 @@ spec:
     requests:
       storage: 8Gi
 ---
+# 整挂 /home/ubuntu 用的新卷。旧的 home-data-pvc 原封不动保留作为退路，
+# 跑稳几周后再删（待办：2026-09-20 之后回收）。
+#
+# local-path 的 allowVolumeExpansion 是 false，容量事后改不了（apply 会被
+# API server 以 immutable 拒绝）。home-data-pvc 的 8Gi 是“只存凭据”时代的
+# 尺寸；整挂 home 之后还要装下 ~/.cache、~/.npm、~/.vscode-server 和
+# ~/.local/share/opencode，所以一次给足。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: user-data-pvc
+  labels:
+    app: devcontainer
+spec:
+  storageClassName: local-path
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
