@@ -82,3 +82,12 @@ jobs:
         run: |
           kubectl get pods -n devcontainer
           kubectl get svc -n devcontainer
+          # Variables expand inside the target container, not in the runner shell.
+          # shellcheck disable=SC2016
+          kubectl exec -n devcontainer deployment/app -c opencode -- bash -eu -c '
+            test "$(readlink "$HOME/.claude/CLAUDE.md")" = "../.agents/AGENTS.md"
+            test -r "$HOME/.claude/CLAUDE.md"
+            test "$(readlink "$HOME/.claude/skills")" = "../.agents/skills"
+            skill_files=("$HOME"/.claude/skills/*/SKILL.md)
+            test -f "${skill_files[0]}"
+          '
