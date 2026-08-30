@@ -27,6 +27,10 @@ docker pull songhuangcn/devcontainer-java:vscode-1.130.0
 
 `vscode-<version>-repo-<short-sha>` 同时锁定 VS Code 版本和本仓库构建版本。手动运行 `build-devcontainer-java` workflow 时，可以通过 `vscode_version` 输入临时构建其他稳定版；非默认版本不会更新 `latest` 和 `commit-*` 标签。
 
+Java 镜像的 VS Code Server 装在 `/opt/vscode-server`（不在 `~/.vscode-server`），首启时由 ENTRYPOINT `devcontainer-home-init` 在 home 卷里建软链指回去，556 MB 不进卷。因此挂一个已有的 home 卷不再会遮住预装的 server。
+
+注意：devcontainer CLI 在 `overrideCommand: true`（image/dockerfile 型 devcontainer 的默认值）时会覆盖镜像 ENTRYPOINT，软链就不会建，VS Code 会自己重新下载一份 server——功能不丢，只是慢。需要的话在消费方的 `devcontainer.json` 里加 `"postCreateCommand": "/usr/local/bin/devcontainer-home-init"` 兜底。
+
 ## 前置依赖
 
 只需要 Docker 和 Docker Compose：
