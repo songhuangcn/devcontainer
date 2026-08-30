@@ -22,7 +22,7 @@ CI 发布以下镜像：
 Java 镜像预装的 VS Code Server 默认版本由 `dockerfiles/vscode.java.version` 定义。Java 镜像还会发布按 VS Code 版本命名的标签，可以直接拉取指定版本：
 
 ```bash
-docker pull songhuangcn/devcontainer-java:vscode-1.130.0
+docker pull songhuangcn/devcontainer-java:vscode-1.135.0
 ```
 
 `vscode-<version>-repo-<short-sha>` 同时锁定 VS Code 版本和本仓库构建版本。手动运行 `build-devcontainer-java` workflow 时，可以通过 `vscode_version` 输入临时构建其他稳定版；非默认版本不会更新 `latest` 和 `commit-*` 标签。
