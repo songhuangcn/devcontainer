@@ -7,9 +7,6 @@ ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 DATA_DIR="${ROOT_DIR}/data"
 ENV_FILE="${ROOT_DIR}/.env"
 ENV_SAMPLE="${ROOT_DIR}/.env.sample"
-PERSISTENT_FILES=(
-  .claude.json
-)
 
 log() {
   printf '[setup] %s\n' "$*"
@@ -25,19 +22,15 @@ create_env() {
 }
 
 prepare_persistent_files() {
-  local file
-
+  # ./data 整挂到 /home/ubuntu，其余目录由镜像首启的 devcontainer-home-init 从
+  # /opt/home-skel 补进来。这里只预建 config/ 那四条嵌套挂载的父目录：缺失时
+  # Docker daemon 会以 root 身份创建挂载点父目录，容器内的 ubuntu 就写不进去。
   mkdir -p \
-    "${DATA_DIR}/.multica" \
-    "${DATA_DIR}/opencode" \
-    "${DATA_DIR}/lark-cli" \
-    "${DATA_DIR}/multica_workspaces"
+    "${DATA_DIR}/.claude" \
+    "${DATA_DIR}/.codex" \
+    "${DATA_DIR}/.config/opencode"
 
-  for file in "${PERSISTENT_FILES[@]}"; do
-    touch "${DATA_DIR}/${file}"
-  done
-
-  log 'prepared required bind-mounted files under ./data.'
+  log 'prepared nested bind-mount parent directories under ./data.'
 }
 
 create_env

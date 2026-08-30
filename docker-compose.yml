@@ -12,25 +12,12 @@ x-app-base: &app-base
   restart: unless-stopped
   volumes:
       - ..:/workspace
-      # 只持久化用户数据目录；.bashrc/.profile 等 shell 启动文件继续使用镜像内版本。
-      - ./data/.agents:/home/ubuntu/.agents
-      - ./data/.cache:/home/ubuntu/.cache
-      - ./data/.claude:/home/ubuntu/.claude
-      - ./data/.codex:/home/ubuntu/.codex
-      - ./data/.config:/home/ubuntu/.config
-      - ./data/.copilot:/home/ubuntu/.copilot
-      - ./data/.lark-cli:/home/ubuntu/.lark-cli
-      - ./data/opencode:/home/ubuntu/.local/share/opencode
-      - ./data/lark-cli:/home/ubuntu/.local/share/lark-cli
-      - ./data/.multica:/home/ubuntu/.multica
-      - ./data/.npm:/home/ubuntu/.npm
-      - ./data/.ssh:/home/ubuntu/.ssh
-      # 保留镜像预装的 VS Code Server bin，只持久化用户数据和扩展。
-      - ./data/.vscode-server/data:/home/ubuntu/.vscode-server/data
-      - ./data/.vscode-server/extensions:/home/ubuntu/.vscode-server/extensions
-      - ./data/.claude.json:/home/ubuntu/.claude.json
-      - ./data/multica_workspaces:/home/ubuntu/multica_workspaces
+      # 整挂用户 home。镜像自带的工具链装在 /opt（mise、agent CLI、home skel），
+      # 不会被这个卷遮住；新增工具不再需要在这里补挂载。
+      - ./data:/home/ubuntu
       # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
+      # 这四条是 /home/ubuntu 的嵌套挂载，父目录必须已存在于 ./data，否则由
+      # Docker daemon 以 root 创建，容器内的 ubuntu 用户就写不进去（`make setup`）。
       - ./config/.gitconfig:/home/ubuntu/.gitconfig
       - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
       - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml

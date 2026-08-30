@@ -10,6 +10,7 @@ on:
       - dockerfiles/vscode.java.version
       - dockerfiles/Dockerfile.java
       - scripts/vscode-server-install.sh
+      - scripts/home-init.sh
       - .github/workflows/build-devcontainer-java.yml
   workflow_dispatch:
     inputs:

@@ -25,6 +25,9 @@ set -eu
 PLATFORM="linux"
 ARCH="${2:-}"
 VERSION="${1:-}"
+# 装到镜像自己的目录而不是 ~/.vscode-server：home 会被持久化卷整挂盖住。
+# 首启时由 devcontainer-home-init 在卷里建软链指回这里。
+SERVER_ROOT="${3:-${VSCODE_SERVER_ROOT:-${HOME}/.vscode-server}}"
 
 if ! printf "%s" "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     echo "invalid VS Code version '${VERSION}', expected x.y.z" >&2
@@ -87,9 +90,9 @@ fi
 echo "resolved VS Code ${VERSION} to commit ${commit_sha}"
 
 # VS Code clients locate preinstalled servers by commit, not release version.
-mkdir -p ~/.vscode-server/bin/"${commit_sha}"
+mkdir -p "${SERVER_ROOT}/bin/${commit_sha}"
 tar --no-same-owner -xz --strip-components=1 \
-    -C ~/.vscode-server/bin/"${commit_sha}" \
+    -C "${SERVER_ROOT}/bin/${commit_sha}" \
     -f "/tmp/${archive}"
-cd ~/.vscode-server/bin
+cd "${SERVER_ROOT}/bin"
 ln -sfn "${commit_sha}" default_version

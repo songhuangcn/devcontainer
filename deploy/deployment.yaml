@@ -35,59 +35,30 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: arm1
       # 不用 fsGroup：它会递归放宽整个卷的权限（比如把 .ssh 私钥从 600 改成
-      # 660），导致 ssh 客户端拒绝使用私钥。改用一次性 initContainer 只修 owner，
-      # 不动权限位。
+      # 660），导致 ssh 客户端拒绝使用私钥。这里只处理属主，不动权限位。
       initContainers:
       - name: fix-ownership
         image: busybox:1.36
-        # Kubernetes 不会自动创建 subPath；先准备全部 home-data 目录和文件，
-        # 再统一修正 owner，但不改变 .ssh 等敏感文件的权限位。
+        # 除了卷根目录，还要预建 config-data 那四条 subPath 挂载的父目录：
+        # kubelet 会以 root 补出缺失的挂载点父目录，而它比镜像 ENTRYPOINT 的
+        # devcontainer-home-init 更早，所以 /opt/home-skel 兜不住这一步——空卷
+        # 首启时 .claude/.codex/.config/opencode 会变成 root 所有，容器里的
+        # ubuntu 再也写不进自己的配置目录。其余目录仍由 home-init 负责。
         command:
         - sh
         - -c
         - |
-          mkdir -p \
-            /mnt/home-data/.agents \
-            /mnt/home-data/.cache \
-            /mnt/home-data/.claude \
-            /mnt/home-data/.codex \
-            /mnt/home-data/.config \
-            /mnt/home-data/.copilot \
-            /mnt/home-data/.lark-cli \
-            /mnt/home-data/.multica \
-            /mnt/home-data/.npm \
-            /mnt/home-data/.ssh \
-            /mnt/home-data/.vscode-server/data \
-            /mnt/home-data/.vscode-server/extensions \
-            /mnt/home-data/lark-cli \
-            /mnt/home-data/multica_workspaces \
-            /mnt/home-data/opencode
-          touch /mnt/home-data/.claude.json
-          chown 1000:1000 \
-            /mnt/workspace \
-            /mnt/home-data \
-            /mnt/home-data/.agents \
-            /mnt/home-data/.cache \
-            /mnt/home-data/.claude \
-            /mnt/home-data/.claude.json \
-            /mnt/home-data/.codex \
-            /mnt/home-data/.config \
-            /mnt/home-data/.copilot \
-            /mnt/home-data/.lark-cli \
-            /mnt/home-data/.multica \
-            /mnt/home-data/.npm \
-            /mnt/home-data/.ssh \
-            /mnt/home-data/.vscode-server \
-            /mnt/home-data/.vscode-server/data \
-            /mnt/home-data/.vscode-server/extensions \
-            /mnt/home-data/lark-cli \
-            /mnt/home-data/multica_workspaces \
-            /mnt/home-data/opencode
+          mkdir -p /mnt/user-data/.claude \
+                   /mnt/user-data/.codex \
+                   /mnt/user-data/.config/opencode
+          chown 1000:1000 /mnt/workspace /mnt/user-data \
+            /mnt/user-data/.claude /mnt/user-data/.codex \
+            /mnt/user-data/.config /mnt/user-data/.config/opencode
         volumeMounts:
         - name: workspace
           mountPath: /mnt/workspace
-        - name: home-data
-          mountPath: /mnt/home-data
+        - name: user-data
+          mountPath: /mnt/user-data
       containers:
       # 两个应用容器共享镜像、环境来源和持久化挂载；命令、探针和资源独立配置。
       - <<: &app-base
@@ -101,54 +72,10 @@ spec:
           volumeMounts:
           - name: workspace
             mountPath: /workspace
-          - name: home-data
-            mountPath: /home/ubuntu/.agents
-            subPath: .agents
-          - name: home-data
-            mountPath: /home/ubuntu/.cache
-            subPath: .cache
-          - name: home-data
-            mountPath: /home/ubuntu/.claude
-            subPath: .claude
-          - name: home-data
-            mountPath: /home/ubuntu/.codex
-            subPath: .codex
-          - name: home-data
-            mountPath: /home/ubuntu/.config
-            subPath: .config
-          - name: home-data
-            mountPath: /home/ubuntu/.copilot
-            subPath: .copilot
-          - name: home-data
-            mountPath: /home/ubuntu/.lark-cli
-            subPath: .lark-cli
-          - name: home-data
-            mountPath: /home/ubuntu/.local/share/opencode
-            subPath: opencode
-          - name: home-data
-            mountPath: /home/ubuntu/.local/share/lark-cli
-            subPath: lark-cli
-          - name: home-data
-            mountPath: /home/ubuntu/.multica
-            subPath: .multica
-          - name: home-data
-            mountPath: /home/ubuntu/.npm
-            subPath: .npm
-          - name: home-data
-            mountPath: /home/ubuntu/.ssh
-            subPath: .ssh
-          - name: home-data
-            mountPath: /home/ubuntu/.vscode-server/data
-            subPath: .vscode-server/data
-          - name: home-data
-            mountPath: /home/ubuntu/.vscode-server/extensions
-            subPath: .vscode-server/extensions
-          - name: home-data
-            mountPath: /home/ubuntu/.claude.json
-            subPath: .claude.json
-          - name: home-data
-            mountPath: /home/ubuntu/multica_workspaces
-            subPath: multica_workspaces
+          # 整挂 home。必须排在下面四条 config-data 之前：kubelet 按声明顺序
+          # 挂载，先挂子路径的话会被随后挂上的 /home/ubuntu 整个盖住。
+          - name: user-data
+            mountPath: /home/ubuntu
           # 可提交的工具配置由根目录 kustomization 从 config/ 生成。
           - name: config-data
             mountPath: /home/ubuntu/.gitconfig
@@ -163,8 +90,8 @@ spec:
             mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
             subPath: opencode.jsonc
         name: opencode
-        command: ["opencode"]
-        args: ["web", "--hostname", "0.0.0.0", "--port", "4096"]
+        # 不要加 command：它会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
+        args: ["opencode", "web", "--hostname", "0.0.0.0", "--port", "4096"]
         ports:
         - containerPort: 4096
           name: opencode
@@ -193,8 +120,10 @@ spec:
             cpu: "1"
       - <<: *app-base
         name: multica
-        command: ["sh", "-c"]
+        # 同上，不要加 command。
         args:
+        - sh
+        - -c
         - >-
           if ! multica auth status >/dev/null 2>&1; then
             multica login --token "$MULTICA_TOKEN";
@@ -240,9 +169,9 @@ spec:
       - name: workspace
         persistentVolumeClaim:
           claimName: workspace-pvc
-      - name: home-data
+      - name: user-data
         persistentVolumeClaim:
-          claimName: home-data-pvc
+          claimName: user-data-pvc
       - name: config-data
         configMap:
           name: config-data
