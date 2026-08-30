@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-tools=(codex claude opencode openclaw)
+tools=(codex claude opencode)
 mise_path="$(readlink -f "$(command -v mise)")"
 smoke_dir="$(mktemp -d)"
 trap 'rmdir "${smoke_dir}"' EXIT

@@ -101,7 +101,7 @@ RUN mise install \
     # Multica resolves provider executables to their canonical paths before launch.
     # A mise shim therefore turns back into the mise binary and is misinterpreted
     # as a task invocation. Put direct tool links ahead of the shim directory.
-    && for tool in codex claude opencode openclaw; do \
+    && for tool in codex claude opencode; do \
         ln -sf "$(mise which "${tool}")" "/home/ubuntu/.local/bin/${tool}"; \
     done \
     && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
@@ -121,6 +121,6 @@ RUN mise exec -- python -m pip install --no-cache-dir \
     urllib3~=2.6.3
 
 # keep permissions
-RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode ~/.openclaw ~/.multica ~/multica_workspaces
+RUN mkdir -p ~/.vscode-server ~/.m2 ~/.config/opencode ~/.multica ~/multica_workspaces
 
 CMD ["sleep", "infinity"]

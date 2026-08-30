@@ -29,7 +29,6 @@ prepare_persistent_files() {
 
   mkdir -p \
     "${DATA_DIR}/.multica" \
-    "${DATA_DIR}/.openclaw" \
     "${DATA_DIR}/opencode" \
     "${DATA_DIR}/lark-cli" \
     "${DATA_DIR}/multica_workspaces"
