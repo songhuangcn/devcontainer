@@ -138,6 +138,10 @@ multica_workspaces
 LIST
 
 tar -C data.old --exclude '.DS_Store' -cf - -T /tmp/dc-migrate.list | tar -C data -xpf -
+
+# 清单里只列了 .lark-cli/config.json 这一个文件，父目录是 tar 用默认权限
+# 补出来的（755），补回原来的 700
+chmod 700 data/.lark-cli
 ```
 
 另外两处路径要改（旧布局把它们放在 `data/` 顶层，新布局回到 `~/.local/share`）：
