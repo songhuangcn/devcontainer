@@ -7,5 +7,5 @@ docker-compose = "2"
 kubectl = "1.35"
 uv = "0"
 rg = "15"
-java = ["zulu-8.92.0.21", "zulu-21.40.17.0"]
+java = ["zulu-21.40.17.0", "zulu-17.68.17.0", "zulu-8.92.0.21"]
 maven = "3.9.9"
