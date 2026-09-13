@@ -4,6 +4,12 @@ x-app-base: &app-base
   # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
   image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
   build: .
+  # 固定 hostname，而不是让每个容器各拿一个随机的 Docker 短 ID。app/opencode/
+  # multica 共享同一份 home/workspace，本就是同一个"机器"身份；multica 在
+  # MULTICA_DAEMON_DEVICE_NAME 未设置时会读 os.Hostname() 当默认值（已读源码
+  # 验证：server/internal/daemon/config.go 的 `deviceName := envOrDefault(
+  # "MULTICA_DAEMON_DEVICE_NAME", host)`），固定 hostname 后不用再单独配置。
+  hostname: devcontainer-local
   env_file:
     - .env
   environment:
@@ -46,7 +52,6 @@ services:
       DOCKER_HOST: tcp://docker:2375
       # daemon ID 是服务端 runtime 的去重键；复用原 ID 可保留已有 agent 绑定。
       MULTICA_DAEMON_ID: ${MULTICA_DAEMON_ID:-019fffb2-a6d0-7045-8ff5-9b73fe675dd1}
-      MULTICA_DAEMON_DEVICE_NAME: ${MULTICA_DAEMON_DEVICE_NAME:-devcontainer.local}
     command:
       - sh
       - -c

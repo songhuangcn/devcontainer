@@ -31,6 +31,13 @@ spec:
       labels:
         app: devcontainer
     spec:
+      # 固定 Pod hostname，而不是让每次滚动更新都换一个随机的 Pod 短 ID。
+      # Pod 内的容器共享同一个 UTS namespace，这个值对 opencode/multica/app
+      # 都生效；multica 在 MULTICA_DAEMON_DEVICE_NAME 未设置时会读
+      # os.Hostname() 当默认值（已读源码验证：server/internal/daemon/
+      # config.go 的 `deviceName := envOrDefault("MULTICA_DAEMON_DEVICE_NAME",
+      # host)`），固定 hostname 后不用再单独配置。
+      hostname: devcontainer-cloud
       # local-path PV 是节点本地存储，固定调度到磁盘更宽裕的 arm1
       nodeSelector:
         kubernetes.io/hostname: arm1
@@ -135,8 +142,6 @@ spec:
         # Pod 名会随滚动更新变化；固定 daemon 身份才能复用已绑定 agent 的 runtime。
         - name: MULTICA_DAEMON_ID
           value: 019fff1d-364f-7279-83a7-d79613c153ac
-        - name: MULTICA_DAEMON_DEVICE_NAME
-          value: devcontainer.cloud
         livenessProbe:
           exec:
             command: ["multica", "daemon", "status", "--output", "json"]
