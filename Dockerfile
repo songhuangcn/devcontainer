@@ -1,7 +1,6 @@
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG TARGETARCH
 
 # Install basic development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -88,9 +87,15 @@ RUN rm -f /etc/ssh/ssh_host_* && chmod u+s /usr/sbin/sshd
 # 不可复现。改用 release 附带的 checksums.txt 校验 + 固定版本号的资产 URL——
 # 这套 `multica-cli-<version>-<os>-<arch>.tar.gz` 命名正是 multica-ai/homebrew-tap
 # 的 Formula/multica.rb 由 GoReleaser 生成时用的同一 URL，稳定可依赖。
+# 架构用 dpkg --print-architecture 现查，不吃 TARGETARCH：后者是 BuildKit 的
+# predefined arg，只有声明了 ARG TARGETARCH 才会被自动填值，换成非 BuildKit
+# 的构建路径（旧版 docker build、DOCKER_BUILDKIT=0）就会是空值，装出
+# `multica-cli-0.4.43-linux-.tar.gz` 这种拼错的 URL。dpkg 直接读容器自身的
+# 架构，不依赖构建器怎么传参。
 ARG MULTICA_VERSION=0.4.43
 RUN cd /tmp \
-    && archive="multica-cli-${MULTICA_VERSION}-linux-${TARGETARCH}.tar.gz" \
+    && arch="$(dpkg --print-architecture)" \
+    && archive="multica-cli-${MULTICA_VERSION}-linux-${arch}.tar.gz" \
     && curl -fsSL -O "https://github.com/multica-ai/multica/releases/download/v${MULTICA_VERSION}/${archive}" \
     && curl -fsSL "https://github.com/multica-ai/multica/releases/download/v${MULTICA_VERSION}/checksums.txt" \
         | grep -F " ${archive}" | sha256sum --check - \
