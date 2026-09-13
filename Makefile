@@ -24,7 +24,7 @@ restart-opencode:
 
 .PHONY: logs
 logs:
-	$(COMPOSE) logs -f opencode
+	$(COMPOSE) logs -f app
 
 .PHONY: multica.status
 multica.status:
@@ -59,7 +59,7 @@ stop:
 
 .PHONY: bash
 bash:
-	$(COMPOSE) exec opencode bash
+	$(COMPOSE) exec app bash
 
 .PHONY: update
 update: pull down start
@@ -70,7 +70,7 @@ pull:
 
 .PHONY: build
 build:
-	$(COMPOSE) build opencode
+	$(COMPOSE) build app
 
 .PHONY: down
 down:
@@ -105,12 +105,12 @@ deploy.status: # 查看当前部署状态
 	kubectl get pods,svc,ingress,pvc -n devcontainer
 
 .PHONY: deploy.logs
-deploy.logs: # 查看 opencode 容器日志
-	kubectl logs -n devcontainer -l app=devcontainer -c opencode -f
+deploy.logs: # 查看 app 容器日志
+	kubectl logs -n devcontainer -l app=devcontainer -c app -f
 
 .PHONY: deploy.bash
-deploy.bash: # 进入集群里的 opencode 容器
-	kubectl exec -it -n devcontainer deployment/app -c opencode -- bash
+deploy.bash: # 进入集群里的 app 容器
+	kubectl exec -it -n devcontainer deployment/app -c app -- bash
 
 .PHONY: deploy.multica-status
 deploy.multica-status:

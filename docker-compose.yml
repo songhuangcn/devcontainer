@@ -24,6 +24,11 @@ x-app-base: &app-base
       - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
 
 services:
+  # 默认的通用工作容器：不覆盖 command，走镜像 ENTRYPOINT + 默认 CMD（sleep
+  # infinity）。跟 opencode 服务隔离开——不带 opencode 专属的端口/健康检查，
+  # 只用来提供一个共享 home/workspace 的交互式 shell。
+  app:
+    <<: *app-base
   opencode:
     <<: *app-base
     command: ["opencode", "web", "--hostname", "0.0.0.0", "--port", "${OPENCODE_PORT:-4096}"]

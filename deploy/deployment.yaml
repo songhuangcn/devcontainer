@@ -60,7 +60,7 @@ spec:
         - name: user-data
           mountPath: /mnt/user-data
       containers:
-      # 两个应用容器共享镜像、环境来源和持久化挂载；命令、探针和资源独立配置。
+      # 应用容器共享镜像、环境来源和持久化挂载；命令、探针和资源独立配置。
       - <<: &app-base
           image: songhuangcn/devcontainer
           imagePullPolicy: Always
@@ -151,8 +151,20 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1"
+      - <<: *app-base
+        name: app
+        # 不加 args/command：跟 opencode、multica 隔离开，就用镜像默认的
+        # ENTRYPOINT + CMD（devcontainer-home-init --exec sleep infinity），
+        # 只提供一个共享 home/workspace 的通用 exec 入口。
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
       # Docker-in-Docker sidecar：与应用容器共享同一个 Pod network namespace，
-      # opencode 和 multica 通过 DOCKER_HOST=tcp://localhost:2375 连接
+      # opencode、multica 和 app 通过 DOCKER_HOST=tcp://localhost:2375 连接
       - name: dind
         image: docker:28-dind
         securityContext:
