@@ -4,7 +4,7 @@
 
 ## 内容
 
-- `docker-compose.yml`：用共享 base 配置分别启动 `opencode`、`multica`、`claude`，并启动 Docker-in-Docker service `docker`。
+- `docker-compose.yml`：用共享 base 配置分别启动 `opencode`、`multica`，并启动 Docker-in-Docker service `docker`。
 - `Dockerfile`：构建开发工具镜像，内置 OpenCode、常用 CLI、Docker CLI、Compose plugin 和论文输出工具链。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口，不再使用 devcontainer features。
 - `scripts/setup.sh`：创建 `.env`，并预建 `./data` 下 config 嵌套挂载所需的父目录。
@@ -217,52 +217,9 @@ make agent-cli.smoke
 
 `make agent-cli.smoke` 会在空白临时目录中按 Multica daemon 使用的方式解析并执行 Codex、Claude 和 OpenCode，防止 provider 命令错误落到 mise task runner。验证时先用 `make multica.status` 确认 runtime 在线，再从 Multica 触发一次真实 agent task。容器重启后，认证和 task workspace 会继续保留。
 
-## Claude Code Remote Control
-
-独立的 `claude` service 以前台模式运行 `claude remote-control`，让 [claude.ai/code](https://claude.ai/code) 或 Claude 手机 app 能直接控制这个容器里的 Claude Code 会话——用它代替 SSH 连接的原因：SSH host key 在容器重建后会变化，Claude Desktop 目前无法优雅处理这种轮换（无重新信任提示，见 [anthropics/claude-code#72735](https://github.com/anthropics/claude-code/issues/72735)），而 Remote Control 没有这个问题——它没有持久化的"设备身份"，`environmentId` 设计上就是每次进程启动重新生成（本地 `~/.claude/projects/*/bridge-pointer.json` 里 4 小时 TTL + pid 存活检测），重建容器不需要任何重新配对操作。
-
-三个一次性的人工前提，都做完之后完全免维护——容器重建、重启都不需要重来：
-
-1. **交互式登录**：Remote Control 明确拒绝 `claude setup-token`/`CLAUDE_CODE_OAUTH_TOKEN` 这类长期 token（报错 `requires a full-scope login token`），只认真正的交互式 OAuth 登录：
-
-   ```bash
-   docker compose exec claude claude auth login
-   ```
-
-   （也可以直接 `make claude.login`。）会打印一个授权链接，浏览器打开、登录、把回调 code 粘贴回终端即可。登录态写进持久化的 home 卷，跨 rebuild 保留，不需要重复登录。
-
-2. **workspace trust**：Remote Control 要求 `/workspace` 已经被 `claude` 交互式接受过信任弹窗（存在持久化的 `~/.claude.json` 里，跨 rebuild 保留，本地 `./data` 和集群 `user-data-pvc` 各自独立）。没有非交互方式可以预先接受，需要手动：
-
-   ```bash
-   make bash
-   claude   # 在 /workspace 里接受一次信任弹窗，然后退出即可
-   ```
-
-3. **"Enable Remote Control?" 确认**：即使登录、信任都做完了，`claude remote-control` 第一次运行还会问一句 `Enable Remote Control? (y/n)`。容器里没有 stdin，无人值守启动时读不到这个确认就会直接退出——`docker compose ps` 会看到反复 `Restarting`。同样需要交互式跑一次来把这个确认存下来（存的是 `~/.claude.json` 里的 `remoteDialogSeen`）：
-
-   ```bash
-   make bash
-   cd /workspace && claude remote-control   # 回车确认 "y"，看到 Connected 之后 Ctrl+C 退出即可
-   ```
-
-   三步做完之后，`make claude.restart`（或者容器重建后自动启动）就能无人值守常驻了。
-
-以上三步不管做的顺序如何，只要都做过一次，之后的 `docker compose up -d`/容器重建都不需要重来。
-
-`CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX` 和 `multica` 的 `MULTICA_DAEMON_DEVICE_NAME` 一样，读的是同一个 `.env` 里的 `DEVICE_NAME`（默认 `devcontainer.local`）——不能留空：两者默认都会取容器 hostname 兜底，而这台容器的 hostname 只是为了好看固定成了 `devcontainer-local`（见 `docker-compose.yml` 顶部说明），并不保证跨环境唯一。云端实例同样通过 k8s 侧的 `DEVICE_NAME` 等价机制固定为 `devcontainer.cloud`（见下面 k3s 部署一节），两个环境的 Remote Control 各自独立注册、互不冲突，可以同时在线。
-
-常用命令：
-
-```bash
-make claude.logs
-make claude.restart
-make claude.stop
-make claude.login
-```
-
 ## Docker
 
-- Docker daemon 由 `docker:28-dind` service 提供，三个应用 service 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
+- Docker daemon 由 `docker:28-dind` service 提供，两个应用 service 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
 - Docker 数据持久化在 `docker-data` volume。
 
 ## VS Code
@@ -279,10 +236,9 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - **待办（2026-09-20 之后）**：旧的 `home-data-pvc`（8Gi）在切到整挂 home 时原封不动留着当退路，新卷跑稳几周后从 `deploy/pvc.yaml` 删掉并 `kubectl delete pvc home-data-pvc`。顺带还有一个更早遗留的 `openclaw-data-pvc` 可以一起回收。
 - 配置：根目录 Kustomize overlay 从 `config/` 生成带内容哈希的 ConfigMap，挂载 OpenCode、Git、Claude 和 Codex 配置；配置变化会触发 Pod 滚动更新。
 - 工具解析：mise 负责安装 provider CLI，但镜像会在 `/opt/agent-bin` 创建直达实际 CLI 的链接并置于 `/opt/mise/shims` 之前。Multica daemon 即使规范化可执行文件路径，也不会把 Codex 等 provider 错误启动成 mise task runner；可用 `smoke-agent-cli-launchers` 在任意空白目录复验。
-- 首启初始化：三个应用容器都**只写 `args:`，不写 `command:`**。`command:` 会覆盖镜像 ENTRYPOINT `devcontainer-home-init`，首启就不会把 `/opt/home-skel` 补进空卷，也不会建立 Claude Code 到 `~/.agents` 的用户指令和 skills 软链（Java 镜像还会缺少 vscode-server 软链）。`livenessProbe.exec.command` 不经过 ENTRYPOINT，不受影响。
-- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Claude Code Remote Control 不走 Secret——`CLAUDE_CODE_OAUTH_TOKEN` 这类长期 token 对它无效（inference-only，见上面"Claude Code Remote Control"一节），集群里需要手动 `make deploy.claude-login` 做一次交互式登录才能用上 Remote Control。Secret 明文不在仓库里。
+- 首启初始化：两个应用容器都**只写 `args:`，不写 `command:`**。`command:` 会覆盖镜像 ENTRYPOINT `devcontainer-home-init`，首启就不会把 `/opt/home-skel` 补进空卷，也不会建立 Claude Code 到 `~/.agents` 的用户指令和 skills 软链（Java 镜像还会缺少 vscode-server 软链）。`livenessProbe.exec.command` 不经过 ENTRYPOINT，不受影响。
+- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
 - Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID，并固定 `MULTICA_DAEMON_DEVICE_NAME=devcontainer.cloud`。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。
-- Claude Code Remote Control：`claude` 容器固定 `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=devcontainer.cloud`，通过一个 YAML anchor 和 `multica` 容器的 `MULTICA_DAEMON_DEVICE_NAME` 共用同一个字符串，与本地的 `devcontainer.local` 区分开，两边各自独立注册、互不冲突。没有类似 `multica` 的自动登录脚本——full-scope 登录只能走交互式 `claude auth login`，没法脚本化判断，登录/信任弹窗做完之前 `claude remote-control` 会直接退出，交给 kubelet 按 Pod 默认的重启策略处理，不加 `livenessProbe`（没有对应的状态查询子命令，且这个失败模式是进程退出而不是卡住，探针加不加效果一样）。首次部署后需要在 Pod 里手动过一遍上面"Claude Code Remote Control"一节的三个一次性前提（登录、workspace trust、"Enable Remote Control?" 确认），这些状态都持久化在 `user-data-pvc` 里，跨滚动更新保留。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode` 和 `multica` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
 - 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401。
 - 数据迁移：切到 `user-data-pvc` 时，凭据是在集群内用一个同时挂了两个 PVC 的临时 Pod 从 `home-data-pvc` 捞过来的（白名单同「一次性数据迁移」那一节），老卷全程只读、不做任何修改。注意 `~/.local/share/lark-cli/master.key` 从来没有迁到集群，只在本地 `./data` 里有，要用 lark CLI 得单独上传。之后的更新走 CI，不再涉及手动数据迁移。
@@ -297,11 +253,9 @@ make deploy.logs     # 查看 opencode 容器日志
 make deploy.bash     # 进入集群里的 opencode 容器
 make deploy.multica-status  # 查询 daemon 状态
 make deploy.multica-logs    # 查看 daemon 日志
-make deploy.claude-logs     # 查看 Remote Control 日志
-make deploy.claude-login    # 交互式 claude auth login（首次部署后跑一次）
 ```
 
-Kubernetes Pod 内分别运行 `opencode`、`multica`、`claude` 容器；认证态和任务目录随整挂的 `user-data-pvc` 持久化。首次部署 Multica 会用 `MULTICA_TOKEN` 自动登录；`claude` 容器需要额外手动跑一次 `make deploy.claude-login`（即 `kubectl exec -it -n devcontainer deployment/app -c claude -- claude auth login`）完成交互式登录（见上面"Claude Code Remote Control"一节），之后可用 status、Runtimes 页面、claude.ai/code 会话选择器确认在线。
+Kubernetes Pod 内分别运行 `opencode` 和 `multica` 容器；Multica 认证和任务目录随整挂的 `user-data-pvc` 持久化。首次部署会使用 `MULTICA_TOKEN` 自动登录，之后可用 status 和 Runtimes 页面确认在线。
 
 修改 `deploy/app-secret.yaml`（明文，已被 `deploy/.gitignore` 排除）后，用 `make deploy.encode` 重新生成 `deploy/app-sealed-secret.yaml`。
 

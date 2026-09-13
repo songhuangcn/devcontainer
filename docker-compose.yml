@@ -4,10 +4,6 @@ x-app-base: &app-base
   # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
   image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
   build: .
-  # 纯粹让容器内 `hostname` 好认；不用于任何服务的身份识别（那部分见下面
-  # DEVICE_NAME 的说明）。k8s 侧 Pod hostname 不允许带点，所以这里也统一用
-  # 连字符形式，本地和云端两边风格一致。
-  hostname: devcontainer-local
   env_file:
     - .env
   environment:
@@ -45,10 +41,7 @@ services:
       DOCKER_HOST: tcp://docker:2375
       # daemon ID 是服务端 runtime 的去重键；复用原 ID 可保留已有 agent 绑定。
       MULTICA_DAEMON_ID: ${MULTICA_DAEMON_ID:-019fffb2-a6d0-7045-8ff5-9b73fe675dd1}
-      # DEVICE_NAME 是这台本地实例统一的名字，claude service 的会话名前缀也读
-      # 同一个变量——不要用容器默认 hostname（Docker 默认取随机容器 ID，每次
-      # 重建都变，见 x-app-base 的说明）。
-      MULTICA_DAEMON_DEVICE_NAME: ${DEVICE_NAME:-devcontainer.local}
+      MULTICA_DAEMON_DEVICE_NAME: ${MULTICA_DAEMON_DEVICE_NAME:-devcontainer.local}
     command:
       - sh
       - -c
@@ -63,22 +56,9 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
-  claude:
-    <<: *app-base
-    environment:
-      # environment 会整段覆盖 x-app-base 的 environment（YAML merge key 不做
-      # 深合并），必须像 multica 一样重复写 DOCKER_HOST，否则会静默丢失。
-      DOCKER_HOST: tcp://docker:2375
-      # 和 multica 共用同一个 DEVICE_NAME，避免两处分别配置。
-      CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX: ${DEVICE_NAME:-devcontainer.local}
-    # 没有类似 multica 的"先查状态再登录"步骤——full-scope 登录只能靠交互式
-    # claude auth login（见 README），没法脚本化判断。登录/信任弹窗做完之前
-    # 直接退出即可，交给 x-app-base 的 restart: unless-stopped 兜底重启。
-    command: ["claude", "remote-control"]
   docker:
     image: docker:28-dind
     privileged: true
-    hostname: devcontainer-local
     environment:
       DOCKER_TLS_CERTDIR: ""
     volumes:
