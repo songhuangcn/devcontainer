@@ -31,6 +31,12 @@ spec:
       labels:
         app: devcontainer
     spec:
+      # 纯粹让容器内 `hostname` 好认；不用于任何服务的身份识别（那部分见
+      # multica/claude 容器各自的 DEVICE_NAME 说明）。Pod 内所有容器共享同一个
+      # UTS namespace，这一行会同时作用于 opencode/multica/claude/dind 四个
+      # 容器。k8s 不允许 hostname 带点（实测：spec.hostname 校验会直接拒绝
+      # "devcontainer.cloud"，报 "must not contain dots"），所以用连字符。
+      hostname: devcontainer-cloud
       # local-path PV 是节点本地存储，固定调度到磁盘更宽裕的 arm1
       nodeSelector:
         kubernetes.io/hostname: arm1
@@ -60,7 +66,7 @@ spec:
         - name: user-data
           mountPath: /mnt/user-data
       containers:
-      # 两个应用容器共享镜像、环境来源和持久化挂载；命令、探针和资源独立配置。
+      # 三个应用容器共享镜像、环境来源和持久化挂载；命令、探针和资源独立配置。
       - <<: &app-base
           image: songhuangcn/devcontainer
           imagePullPolicy: Always
@@ -135,8 +141,10 @@ spec:
         # Pod 名会随滚动更新变化；固定 daemon 身份才能复用已绑定 agent 的 runtime。
         - name: MULTICA_DAEMON_ID
           value: 019fff1d-364f-7279-83a7-d79613c153ac
+        # 云端实例统一的名字：claude 容器的会话名前缀也引用这个 anchor，避免
+        # 两处分别硬编码同一个字符串。
         - name: MULTICA_DAEMON_DEVICE_NAME
-          value: devcontainer.cloud
+          value: &device-name devcontainer.cloud
         livenessProbe:
           exec:
             command: ["multica", "daemon", "status", "--output", "json"]
@@ -150,6 +158,27 @@ spec:
             cpu: "50m"
           limits:
             memory: "1Gi"
+            cpu: "1"
+      - <<: *app-base
+        name: claude
+        # 同上，不要加 command。
+        args: ["claude", "remote-control"]
+        env:
+        - name: DOCKER_HOST
+          value: tcp://localhost:2375
+        - name: CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX
+          value: *device-name
+        # 没有类似 multica 的"先查状态再登录"步骤——full-scope 登录只能靠交互
+        # 式 claude auth login（见 README），没法脚本化判断，登录/信任弹窗做完
+        # 之前它就直接退出。不加 livenessProbe：没有对应的状态查询子命令可探测，
+        # 而且这个失败模式是进程直接退出，不是卡住，kubelet 对容器退出的默认
+        # 重启行为已经够用，不需要额外探针。
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "2Gi"
             cpu: "1"
       # Docker-in-Docker sidecar：与应用容器共享同一个 Pod network namespace，
       # opencode 和 multica 通过 DOCKER_HOST=tcp://localhost:2375 连接

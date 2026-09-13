@@ -50,6 +50,22 @@ multica.smoke:
 agent-cli.smoke:
 	$(COMPOSE) run --rm --no-deps multica smoke-agent-cli-launchers
 
+.PHONY: claude.logs
+claude.logs:
+	$(COMPOSE) logs -f claude
+
+.PHONY: claude.restart
+claude.restart:
+	$(COMPOSE) restart claude
+
+.PHONY: claude.stop
+claude.stop:
+	$(COMPOSE) stop claude
+
+.PHONY: claude.login
+claude.login:
+	$(COMPOSE) exec claude claude auth login
+
 .PHONY: restart
 restart: stop start
 
@@ -119,3 +135,11 @@ deploy.multica-status:
 .PHONY: deploy.multica-logs
 deploy.multica-logs:
 	kubectl logs -n devcontainer deployment/app -c multica -f
+
+.PHONY: deploy.claude-logs
+deploy.claude-logs:
+	kubectl logs -n devcontainer deployment/app -c claude -f
+
+.PHONY: deploy.claude-login
+deploy.claude-login:
+	kubectl exec -it -n devcontainer deployment/app -c claude -- claude auth login
