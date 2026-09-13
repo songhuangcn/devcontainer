@@ -1,6 +1,7 @@
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
+ARG TARGETARCH
 
 # Install basic development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -76,12 +77,20 @@ RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# multica 以 root 安装：安装脚本的 MULTICA_BIN_DIR 默认 /usr/local/bin，仅在
-# 不可写时才回落到 $HOME/.local/bin。显式给出该变量做双保险。
-RUN curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh \
-      | MULTICA_BIN_DIR=/usr/local/bin bash \
-    && multica version \
-    && rm -rf /root/.multica /root/.cache
+# 锁定版本而非官方 install.sh：该脚本没有版本锁定的开关（已读源码确认，
+# releases/latest 的 302 跳转是唯一版本来源），装到的永远是构建当天的 latest，
+# 不可复现。改用 release 附带的 checksums.txt 校验 + 固定版本号的资产 URL——
+# 这套 `multica-cli-<version>-<os>-<arch>.tar.gz` 命名正是 multica-ai/homebrew-tap
+# 的 Formula/multica.rb 由 GoReleaser 生成时用的同一 URL，稳定可依赖。
+ARG MULTICA_VERSION=0.4.43
+RUN cd /tmp \
+    && archive="multica-cli-${MULTICA_VERSION}-linux-${TARGETARCH}.tar.gz" \
+    && curl -fsSL -O "https://github.com/multica-ai/multica/releases/download/v${MULTICA_VERSION}/${archive}" \
+    && curl -fsSL "https://github.com/multica-ai/multica/releases/download/v${MULTICA_VERSION}/checksums.txt" \
+        | grep -F " ${archive}" | sha256sum --check - \
+    && tar -xzf "${archive}" -C /usr/local/bin multica \
+    && rm -f "${archive}" \
+    && multica version
 
 # 镜像自带的一切都放在 /opt，构建结束时 /home/ubuntu 必须是空的。
 #   /opt/mise       mise 数据目录（installs/shims/downloads/state/cache）
