@@ -77,6 +77,12 @@ RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+# sshd 支持：删掉包安装时烘进镜像层的默认 host key（同一镜像 tag 的所有容器会
+# 共享同一份，且每次重新构建都会换一批——host key 只从持久卷里生成/复用，见
+# scripts/start-sshd.sh）。给 sshd 加 setuid 位，让非 root 的 ubuntu 用户能直接
+# exec 起它拿到 root，不用 sudo 包一层常驻成为事实上的 PID 1。
+RUN rm -f /etc/ssh/ssh_host_* && chmod u+s /usr/sbin/sshd
+
 # 锁定版本而非官方 install.sh：该脚本没有版本锁定的开关（已读源码确认，
 # releases/latest 的 302 跳转是唯一版本来源），装到的永远是构建当天的 latest，
 # 不可复现。改用 release 附带的 checksums.txt 校验 + 固定版本号的资产 URL——
@@ -125,6 +131,7 @@ RUN curl -fsSL https://mise.run | sh
 COPY mise.toml /etc/mise/config.toml
 COPY --chmod=755 scripts/smoke-agent-cli-launchers.sh /usr/local/bin/smoke-agent-cli-launchers
 COPY --chmod=755 scripts/home-init.sh /usr/local/bin/devcontainer-home-init
+COPY --chmod=755 scripts/start-sshd.sh /usr/local/bin/devcontainer-start-sshd
 
 # NPM_CONFIG_CACHE 只在本层生效：mise 的 npm backend（npm:@larksuite/cli）会把
 # npm 缓存写进 ~/.npm，那是 home 里唯一一处几百 MB 级的构建残留。运行时仍用

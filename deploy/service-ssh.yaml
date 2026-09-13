@@ -1,0 +1,18 @@
+# 独立于 deployment.yaml 里的 `app` Service（后者只走 Traefik Ingress 暴露
+# 4096 端口），单独暴露 sshd。端口选 2222 而不是 22：k3s 自带的 ServiceLB
+# （klipper）会把 Service 的 port 值直接绑到节点宿主网络，22 几乎必然已经被
+# 节点自己的系统 sshd 占用。
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-ssh
+  labels:
+    app: devcontainer
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 2222
+    targetPort: 22
+    name: ssh
+  selector:
+    app: devcontainer

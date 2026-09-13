@@ -96,6 +96,22 @@ make update
 make build
 ```
 
+## SSH
+
+`app` 服务前台跑 sshd，可以直接用普通 SSH 客户端（包括 Claude Desktop 的 SSH 远程环境
+功能）连进容器，当运行环境用：
+
+```bash
+make ssh
+# 等价于 ssh -p 2222 ubuntu@localhost
+```
+
+- 只认公钥登录（`PasswordAuthentication no`），授权公钥列表是
+  `data/.ssh/authorized_keys`；加新 key 直接 append 进去，不用重启容器。
+- 宿主机端口默认 `2222`，可在 `.env` 里用 `SSH_PORT` 覆盖；容器内部固定监听 22。
+- host key 只在缺失时生成一次，持久化在 `data/.ssh/host_keys/`，容器重建或镜像
+  升级都不会跟着换——避免 SSH 客户端每次都要重新信任新的 host key。
+
 ## 一次性数据迁移（从旧的 21 条选择性挂载切到整挂 home）
 
 只在从旧布局切过来时做一次，做完就不用再看这一节。策略是**两侧都从空目录开始，
@@ -241,6 +257,10 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。device name 不再单独设置——Pod 固定了 `hostname: devcontainer-cloud`（同 UTS namespace，opencode/multica/app 都生效），`MULTICA_DAEMON_DEVICE_NAME` 未配置时 daemon 会读容器 hostname 当默认值，跟着显示 `devcontainer-cloud`。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode`、`multica` 和 `app` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
 - 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401。
+- SSH：`app` 容器同本地一样跑 sshd，独立的 `app-ssh` Service（`type: LoadBalancer`，
+  依赖 k3s 自带的 ServiceLB/klipper）把 2222 端口（避开节点自己的系统 sshd 占用的
+  22）暴露到集群外，`make deploy.ssh` 连接。云端 `user-data-pvc` 里的
+  `authorized_keys` 是独立于本地 `./data` 的一份，需要单独确认已经写入授权公钥。
 - 数据迁移：切到 `user-data-pvc` 时，凭据是在集群内用一个同时挂了两个 PVC 的临时 Pod 从 `home-data-pvc` 捞过来的（白名单同「一次性数据迁移」那一节），老卷全程只读、不做任何修改。注意 `~/.local/share/lark-cli/master.key` 从来没有迁到集群，只在本地 `./data` 里有，要用 lark CLI 得单独上传。之后的更新走 CI，不再涉及手动数据迁移。
 
 手动操作（需要本地 `kubectl` 已指向该集群、并安装 `kubeseal`）：

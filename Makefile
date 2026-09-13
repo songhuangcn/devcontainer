@@ -61,6 +61,10 @@ stop:
 bash:
 	$(COMPOSE) exec app bash
 
+.PHONY: ssh
+ssh:
+	ssh -p 2222 ubuntu@localhost
+
 .PHONY: update
 update: pull down start
 
@@ -111,6 +115,10 @@ deploy.logs: # 查看 app 容器日志
 .PHONY: deploy.bash
 deploy.bash: # 进入集群里的 app 容器
 	kubectl exec -it -n devcontainer deployment/app -c app -- bash
+
+.PHONY: deploy.ssh
+deploy.ssh: # SSH 进云端实例
+	ssh -p 2222 ubuntu@ai.hdgcs.com
 
 .PHONY: deploy.multica-status
 deploy.multica-status:

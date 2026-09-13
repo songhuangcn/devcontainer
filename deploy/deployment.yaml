@@ -158,9 +158,21 @@ spec:
             cpu: "1"
       - <<: *app-base
         name: app
-        # 不加 args/command：跟 opencode、multica 隔离开，就用镜像默认的
-        # ENTRYPOINT + CMD（devcontainer-home-init --exec sleep infinity），
-        # 只提供一个共享 home/workspace 的通用 exec 入口。
+        # 跟 opencode、multica 隔离开，不带它们专属的端口/健康检查。启动 sshd
+        # 作为前台进程，提供一个可以从集群外 SSH 进来的共享 home/workspace 入口
+        # （host key 持久化在 user-data-pvc，见 scripts/start-sshd.sh）。
+        # 不要加 command：会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
+        args: ["devcontainer-start-sshd"]
+        ports:
+        - containerPort: 22
+          name: ssh
+        readinessProbe:
+          tcpSocket:
+            port: 22
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
         resources:
           requests:
             memory: "128Mi"
