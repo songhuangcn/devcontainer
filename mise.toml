@@ -1,9 +1,9 @@
 [tools]
 node = "22"
 python = "3.13"
-opencode = "1.18.25"
-codex = "0.151.0"
-claude = "2.1.251"
+opencode = "1.18.30"
+codex = "0.152.0"
+claude = "2.1.270"
 docker-cli = "28"
 docker-compose = "2"
 kubectl = "1.35"
