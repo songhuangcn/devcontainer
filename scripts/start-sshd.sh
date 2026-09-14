@@ -4,6 +4,13 @@
 # 重新信任新的 host key。
 set -euo pipefail
 
+# k3s 的 local-path PV 首次创建时默认是 777；deploy 里的 fix-ownership
+# initContainer 只处理属主，不动权限位。sshd 的 StrictModes 会因为 home
+# 目录里其他人可写而直接拒绝登录（"bad ownership or modes for directory"），
+# 所以在这里显式收紧一次。本地 compose 的 ./data 通常已经是安全权限，chmod
+# 是幂等的，两边都跑一样的脚本不需要区分环境。
+sudo chmod 0700 "${HOME}"
+
 HOST_KEY_DIR="${HOME}/.ssh/host_keys"
 install -d -m 700 "${HOST_KEY_DIR}"
 for type in ed25519 rsa; do
