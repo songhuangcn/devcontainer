@@ -39,7 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     latexmk \
     tree \
     libreoffice-writer \
-    gh \
     libssl-dev \
     openssh-client \
     openssh-server \
@@ -92,7 +91,7 @@ RUN rm -f /etc/ssh/ssh_host_* && chmod u+s /usr/sbin/sshd
 # 的构建路径（旧版 docker build、DOCKER_BUILDKIT=0）就会是空值，装出
 # `multica-cli-0.4.43-linux-.tar.gz` 这种拼错的 URL。dpkg 直接读容器自身的
 # 架构，不依赖构建器怎么传参。
-ARG MULTICA_VERSION=0.4.43
+ARG MULTICA_VERSION=0.5.0
 RUN cd /tmp \
     && arch="$(dpkg --print-architecture)" \
     && archive="multica-cli-${MULTICA_VERSION}-linux-${arch}.tar.gz" \
@@ -102,6 +101,23 @@ RUN cd /tmp \
     && tar -xzf "${archive}" -C /usr/local/bin multica \
     && rm -f "${archive}" \
     && multica version
+
+# Ubuntu 24.04 仓库里的 gh 停在 2.45.0（2024 年初），缺 `gh ruleset`、
+# `pr merge --auto` 的若干修复，以及 agent 会用到的 `--json` 字段；官方 apt 源
+# 又只提供 stable，装到的是构建当天的版本，同样不可复现。改用和上面 multica
+# 一致的方式：固定版本号 + checksums.txt 校验，装进 /usr/local/bin（排在
+# /usr/bin 之前，即使将来有人把 apt 版 gh 装回来也是这个优先）。
+ARG GH_VERSION=2.101.0
+RUN cd /tmp \
+    && arch="$(dpkg --print-architecture)" \
+    && archive="gh_${GH_VERSION}_linux_${arch}.tar.gz" \
+    && curl -fsSL -O "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${archive}" \
+    && curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt" \
+        | grep -F " ${archive}" | sha256sum --check - \
+    && tar -xzf "${archive}" --strip-components=2 \
+        -C /usr/local/bin "gh_${GH_VERSION}_linux_${arch}/bin/gh" \
+    && rm -f "${archive}" \
+    && gh --version
 
 # 镜像自带的一切都放在 /opt，构建结束时 /home/ubuntu 必须是空的。
 #   /opt/mise       mise 数据目录（installs/shims/downloads/state/cache）
