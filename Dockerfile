@@ -102,22 +102,11 @@ RUN cd /tmp \
     && rm -f "${archive}" \
     && multica version
 
-# Ubuntu 24.04 仓库里的 gh 停在 2.45.0（2024 年初），缺 `gh ruleset`、
-# `pr merge --auto` 的若干修复，以及 agent 会用到的 `--json` 字段；官方 apt 源
-# 又只提供 stable，装到的是构建当天的版本，同样不可复现。改用和上面 multica
-# 一致的方式：固定版本号 + checksums.txt 校验，装进 /usr/local/bin（排在
-# /usr/bin 之前，即使将来有人把 apt 版 gh 装回来也是这个优先）。
-ARG GH_VERSION=2.101.0
-RUN cd /tmp \
-    && arch="$(dpkg --print-architecture)" \
-    && archive="gh_${GH_VERSION}_linux_${arch}.tar.gz" \
-    && curl -fsSL -O "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${archive}" \
-    && curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt" \
-        | grep -F " ${archive}" | sha256sum --check - \
-    && tar -xzf "${archive}" --strip-components=2 \
-        -C /usr/local/bin "gh_${GH_VERSION}_linux_${arch}/bin/gh" \
-    && rm -f "${archive}" \
-    && gh --version
+# gh 不走 apt：Ubuntu 24.04 仓库里停在 2.45.0（2024 年初），缺 `gh ruleset`
+# 和 `pr merge --auto` 的若干修复，都是 agent 会用到的；官方 apt 源又只提供
+# stable，装到的是构建当天的版本，不可复现。它在 mise 的 registry 里
+# （aqua:cli/cli，带 checksum 校验），所以和 node/python/agent CLI 一起写进
+# mise.toml 统一管版本。multica 不在 registry 里，只能留着上面那段固定 URL。
 
 # 镜像自带的一切都放在 /opt，构建结束时 /home/ubuntu 必须是空的。
 #   /opt/mise       mise 数据目录（installs/shims/downloads/state/cache）
