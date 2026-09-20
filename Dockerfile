@@ -39,7 +39,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     latexmk \
     tree \
     libreoffice-writer \
-    gh \
     libssl-dev \
     openssh-client \
     openssh-server \
@@ -92,7 +91,7 @@ RUN rm -f /etc/ssh/ssh_host_* && chmod u+s /usr/sbin/sshd
 # 的构建路径（旧版 docker build、DOCKER_BUILDKIT=0）就会是空值，装出
 # `multica-cli-0.4.43-linux-.tar.gz` 这种拼错的 URL。dpkg 直接读容器自身的
 # 架构，不依赖构建器怎么传参。
-ARG MULTICA_VERSION=0.4.43
+ARG MULTICA_VERSION=0.5.0
 RUN cd /tmp \
     && arch="$(dpkg --print-architecture)" \
     && archive="multica-cli-${MULTICA_VERSION}-linux-${arch}.tar.gz" \
@@ -102,6 +101,12 @@ RUN cd /tmp \
     && tar -xzf "${archive}" -C /usr/local/bin multica \
     && rm -f "${archive}" \
     && multica version
+
+# gh 不走 apt：Ubuntu 24.04 仓库里停在 2.45.0（2024 年初），缺 `gh ruleset`
+# 和 `pr merge --auto` 的若干修复，都是 agent 会用到的；官方 apt 源又只提供
+# stable，装到的是构建当天的版本，不可复现。它在 mise 的 registry 里
+# （aqua:cli/cli，带 checksum 校验），所以和 node/python/agent CLI 一起写进
+# mise.toml 统一管版本。multica 不在 registry 里，只能留着上面那段固定 URL。
 
 # 镜像自带的一切都放在 /opt，构建结束时 /home/ubuntu 必须是空的。
 #   /opt/mise       mise 数据目录（installs/shims/downloads/state/cache）
