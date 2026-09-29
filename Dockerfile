@@ -91,7 +91,7 @@ RUN rm -f /etc/ssh/ssh_host_* && chmod u+s /usr/sbin/sshd
 # 的构建路径（旧版 docker build、DOCKER_BUILDKIT=0）就会是空值，装出
 # `multica-cli-0.4.43-linux-.tar.gz` 这种拼错的 URL。dpkg 直接读容器自身的
 # 架构，不依赖构建器怎么传参。
-ARG MULTICA_VERSION=0.5.0
+ARG MULTICA_VERSION=0.6.0
 RUN cd /tmp \
     && arch="$(dpkg --print-architecture)" \
     && archive="multica-cli-${MULTICA_VERSION}-linux-${arch}.tar.gz" \
