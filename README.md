@@ -213,7 +213,7 @@ docker compose exec opencode sh -c 'stat -c "%n %s" ~/.gitconfig ~/.claude/setti
 
 ## Multica daemon
 
-镜像通过 Multica 官方安装脚本安装最新 CLI，daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
+镜像从 Multica 官方 release 安装 Dockerfile 中固定的 CLI 版本（当前为 0.6.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
 
 ```bash
 make setup
