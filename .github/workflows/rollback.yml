@@ -36,6 +36,10 @@ jobs:
           ref: ${{ github.sha }}
 
       # make deploy 只等 build-devcontainer*.yml 的镜像构建（和 deploy.yml 保持一致）
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pyyaml==6.0.2
 
       - name: deploy
         run: make deploy

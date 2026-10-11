@@ -25,10 +25,11 @@ changed_files() {
   printf '%s\n' "$files"
 }
 
-# 工作流的 push paths 是否命中改动文件：命中返回 0，确认不命中返回 1，解析出错返回 2
+# 工作流的 push paths 是否命中改动文件：命中返回 0，确认不命中返回 10，其余（含 python 异常）都是错误。
+# 不能用 1 表示未命中：python 未捕获异常的退出码就是 1
 triggers_build() {
   local wf=$1 files=$2
-  FILES=$files python3 - ".github/workflows/$wf" <<'PY' || return $(($? == 1 ? 1 : 2))
+  FILES=$files python3 - ".github/workflows/$wf" <<'PY'
 import os, re, sys, yaml
 
 def to_regex(glob):
@@ -53,7 +54,7 @@ if not paths:
     sys.exit(0)  # 没有 paths 过滤：每次 push 都触发
 regexes = [to_regex(p) for p in paths]
 files = [f for f in os.environ["FILES"].splitlines() if f]
-sys.exit(0 if any(r.match(f) for r in regexes for f in files) else 1)
+sys.exit(0 if any(r.match(f) for r in regexes for f in files) else 10)
 PY
 }
 
@@ -63,8 +64,8 @@ wait_workflow() {
   triggers_build "$wf" "$files" || rc=$?
   case $rc in
     0) ;;
-    1) log "$wf：改动文件不命中 push paths，确认本次提交不触发它，跳过。"; return 0 ;;
-    *) log "$wf：解析 push paths 失败。"; return 1 ;;
+    10) log "$wf：改动文件不命中 push paths，确认本次提交不触发它，跳过。"; return 0 ;;
+    *) log "$wf：解析 push paths 失败（退出码 $rc）。"; return 1 ;;
   esac
   start=$(date +%s)
   while :; do
@@ -99,6 +100,7 @@ wait_workflow() {
   done
 }
 
+python3 -c 'import yaml' || { log '缺少 python3 的 PyYAML。'; exit 1; }
 files=$(changed_files)
 rc=0
 for wf in "${workflows[@]}"; do
