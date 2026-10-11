@@ -1,0 +1,9 @@
+# >>> autoteam >>>
+# 约束 agent 的规则文件只能由人批准修改（规则集需要打开 Require review from Code Owners）
+/.github/        @songhuangcn
+/.autoteam/     @songhuangcn
+/.autoteam/instructions/ @songhuangcn
+/autoteam         @songhuangcn
+/Makefile        @songhuangcn
+/.jscpd.json     @songhuangcn
+# <<< autoteam <<<

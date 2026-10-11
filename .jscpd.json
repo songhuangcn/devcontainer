@@ -1,0 +1,24 @@
+{
+  "threshold": 3,
+  "minTokens": 50,
+  "minLines": 5,
+  "ignore": [
+    "**/.git/**",
+    "**/.github/**",
+    "**/.autoteam/**",
+    "**/*.md",
+    "**/node_modules/**",
+    "**/vendor/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/coverage/**",
+    "**/report/**",
+    "**/*.min.js",
+    "**/*.lock",
+    "**/package-lock.json",
+    "**/pnpm-lock.yaml",
+    "**/go.sum"
+  ],
+  "reporters": ["console"],
+  "output": "report"
+}
