@@ -102,6 +102,16 @@ RUN cd /tmp \
     && rm -f "${archive}" \
     && multica version
 
+# autoteam 启动器：装成 PATH 里的 autoteam。agent 在任何项目里跑 autoteam，都用团队仓库
+# （autoteam-ai/autoteam）main 最新提交的 CLI 和配置，成员仓库不用装 autoteam 的文件。
+# 启动器本身很少变，按提交固定并校验 sha256；它下载的 CLI 不固定，随团队仓库走。
+ARG AUTOTEAM_LAUNCHER_REF=47edf2b69b85d3a229e579f7c8f89607a7d5174b
+ARG AUTOTEAM_LAUNCHER_SHA256=c3d0e9fd5546cf189e9e7094b5134e65859f95adefd425521df86efa1eb30321
+RUN curl -fsSL "https://raw.githubusercontent.com/autoteam-ai/autoteam/${AUTOTEAM_LAUNCHER_REF}/skills/autoteam/bin/autoteam-launcher" \
+        -o /usr/local/bin/autoteam \
+    && echo "${AUTOTEAM_LAUNCHER_SHA256}  /usr/local/bin/autoteam" | sha256sum --check - \
+    && chmod 755 /usr/local/bin/autoteam
+
 # gh 不走 apt：Ubuntu 24.04 仓库里停在 2.45.0（2024 年初），缺 `gh ruleset`
 # 和 `pr merge --auto` 的若干修复，都是 agent 会用到的；官方 apt 源又只提供
 # stable，装到的是构建当天的版本，不可复现。它在 mise 的 registry 里

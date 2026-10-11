@@ -2,13 +2,12 @@ export COMPOSE_PROJECT_NAME = workspace-devcontainer
 
 COMPOSE = docker compose -f docker-compose.yml
 
-# gate.yml 只调 `make check`；deploy.yml、rollback.yml 调 `make deploy`。
+# .github/workflows/autoteam.yml 在 PR 上只调 `make check`，合并后调 `make deploy`（autoteam 的成员仓库约定）。
 SHELLCHECK_IMAGE = koalaman/shellcheck:v0.10.0
 HADOLINT_IMAGE = hadolint/hadolint:v2.12.0
 
 .PHONY: check
 check: ## 全部检查：shellcheck、docker compose 配置校验、hadolint
-	@bash .autoteam/scripts/check-instruction-budget.sh
 	@# 用 docker 跑，本机不需要安装 shellcheck / hadolint；文件走 stdin，不依赖 bind mount
 	@set -e; for f in $$(find scripts dockerfiles -name '*.sh' | sort); do \
 		echo "shellcheck $$f"; \
