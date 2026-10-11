@@ -1,0 +1,15 @@
+# 计费注册表和团队清单。受 CODEOWNERS 保护，改动走 PR。
+# 每月核对一次各家额度规则（窗口、上限、计费方式经常变）。
+# agents 段每个 agent 必须写成一行 flow 映射，autoteam 按行解析。
+
+accounts:
+  claude-max:   { billing: subscription, windows: [5h, weekly] }
+  chatgpt-plus: { billing: subscription, windows: [5h, weekly] }
+
+agents:
+  planner:     { role: planner,     account: claude-max,   runtime: claude@devcontainer-cloud,  model: claude-sonnet-5-5, max_tasks: 5 }
+  impl-claude: { role: implementer, account: claude-max,   runtime: claude@devcontainer-cloud,  model: claude-sonnet-5-5, max_tasks: 3 }
+  impl-codex:  { role: implementer, account: chatgpt-plus, runtime: codex@devcontainer-cloud,   model: gpt-6.1-sol, max_tasks: 3 }
+  rev-claude:  { role: reviewer,    account: claude-max,   runtime: claude@devcontainer-cloud,  model: claude-sonnet-5-5, max_tasks: 3 }
+  rev-codex:   { role: reviewer,    account: chatgpt-plus, runtime: codex@devcontainer-cloud,   model: gpt-6.1-sol, max_tasks: 3 }
+  auditor:     { role: auditor,     account: chatgpt-plus, runtime: codex@devcontainer-cloud,  model: gpt-6.1-sol, max_tasks: 1 }

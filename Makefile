@@ -2,6 +2,34 @@ export COMPOSE_PROJECT_NAME = workspace-devcontainer
 
 COMPOSE = docker compose -f docker-compose.yml
 
+# gate.yml 只调 `make check`；deploy.yml、rollback.yml 调 `make deploy`。
+SHELLCHECK_IMAGE = koalaman/shellcheck:v0.10.0
+HADOLINT_IMAGE = hadolint/hadolint:v2.12.0
+
+.PHONY: check
+check: ## 全部检查：shellcheck、docker compose 配置校验、hadolint
+	@bash .autoteam/scripts/check-instruction-budget.sh
+	@# 用 docker 跑，本机不需要安装 shellcheck / hadolint；文件走 stdin，不依赖 bind mount
+	@set -e; for f in $$(find scripts dockerfiles -name '*.sh' | sort); do \
+		echo "shellcheck $$f"; \
+		docker run --rm -i $(SHELLCHECK_IMAGE) - < "$$f"; \
+	done
+	@# docker-compose.yml 引用了 .env，缺失时用示例文件占位（.env 已在 .gitignore）
+	@[ -f .env ] || cp .env.sample .env
+	$(COMPOSE) config -q
+	@# DL3004：Dockerfile 里有意用 sudo，本任务不改镜像内容，先忽略
+	docker run --rm -i $(HADOLINT_IMAGE) hadolint --failure-threshold error --ignore DL3004 - < Dockerfile
+	docker run --rm -i $(HADOLINT_IMAGE) hadolint --failure-threshold error --ignore DL3004 - < dockerfiles/Dockerfile.java
+
+.PHONY: dev
+dev: ## 一条命令起环境，可重复执行：准备 .env 和数据目录，启动 app 与 Docker-in-Docker
+	bash scripts/setup.sh
+	$(COMPOSE) up -d app
+
+.PHONY: deploy
+deploy: ## 等本次提交的镜像构建（build-devcontainer*.yml）成功，构建成功即视为上线
+	bash scripts/wait-build.sh "$$(git rev-parse HEAD)"
+
 .PHONY: setup
 setup:
 	bash scripts/setup.sh

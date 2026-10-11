@@ -1,0 +1,77 @@
+# 线上故障时由 Planner 手动触发回滚：
+#   gh workflow run rollback.yml -f sha=<最近一次验收通过的提交>
+# 受 CODEOWNERS 保护，只能由人批准修改。
+name: rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 回滚到哪个提交（最近一次验收通过的）
+        required: true
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  deployments: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.sha }}
+
+      # 回滚目标可能早于 deployed-issues.sh；从当前默认分支读取通知脚本。
+      - uses: actions/checkout@v7
+        with:
+          path: .autoteam-current
+          ref: ${{ github.sha }}
+
+      # make deploy 只等 build-devcontainer*.yml 的镜像构建（和 deploy.yml 保持一致）
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pyyaml==6.0.2
+
+      - name: deploy
+        run: make deploy
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: notify planner
+        if: always()
+        env:
+          HOOK: ${{ secrets.MULTICA_DEPLOY_HOOK }}
+          SHA: ${{ inputs.sha }}
+          RESULT: ${{ job.status }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          KEY: rollback-${{ github.run_id }}-${{ github.run_attempt }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::warning::没有设置 secret MULTICA_DEPLOY_HOOK，跳过通知 Planner"
+            exit 0
+          fi
+          if ! issues=$(bash .autoteam-current/.autoteam/scripts/deployed-issues.sh rollback "$SHA"); then
+            echo "::warning::计算部署任务清单失败"
+            exit 1
+          fi
+          echo "部署任务清单: $issues"
+          if [ "$issues" = '[]' ]; then
+            echo "没有相关任务，跳过通知 Planner"
+            exit 0
+          fi
+          jq -n --arg kind rollback --arg sha "$SHA" --arg result "$RESULT" --arg repo "$REPO" --arg run_url "$RUN_URL" --argjson issues "$issues" \
+            '{kind: $kind, sha: $sha, result: $result, repo: $repo, run_url: $run_url, issues: $issues}' \
+            | curl -fsS -X POST "$HOOK" -H 'Content-Type: application/json' \
+                -H "Idempotency-Key: $KEY" --data-binary @- \
+            || echo "::warning::通知 Planner 失败"

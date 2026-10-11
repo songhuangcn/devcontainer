@@ -1,0 +1,19 @@
+# Limits for local instructions created with autoteam eject. Adjust only with human approval.
+400 .autoteam/instructions/roles/auditor.md
+400 .autoteam/instructions/roles/implementer.md
+400 .autoteam/instructions/roles/planner.md
+400 .autoteam/instructions/roles/reviewer.md
+150 .autoteam/instructions/autopilots/daily-digest.md
+150 .autoteam/instructions/autopilots/deploy-result.md
+150 .autoteam/instructions/autopilots/direction.md
+150 .autoteam/instructions/autopilots/health.md
+150 .autoteam/instructions/autopilots/patrol.md
+150 .autoteam/instructions/autopilots/rule-review.md
+150 .autoteam/instructions/runbooks/example.md
+150 .autoteam/instructions/runbooks/accept.md
+150 .autoteam/instructions/runbooks/dispatch.md
+150 .autoteam/instructions/runbooks/escalate.md
+150 .autoteam/instructions/runbooks/intake.md
+150 .autoteam/instructions/runbooks/reassign.md
+150 .autoteam/instructions/runbooks/release.md
+150 .autoteam/instructions/runbooks/progress.md
