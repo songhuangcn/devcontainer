@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Print protected paths. Exit 0 if any match, 1 if none match, 2 on error.
+# No CODEOWNERS file (on the base branch for --pr) means nothing is protected: exit 1.
 # Usage: protected-paths.sh [--pr NUMBER | --files FILE... | --stdin] [--codeowners FILE]
 set -o pipefail
 
@@ -29,7 +30,10 @@ if [ "$mode" = pr ]; then
   base=$(gh pr view "$pr" --json baseRefName --jq .baseRefName) || die 'cannot read PR base branch'
   gh pr view "$pr" --json files --jq '.files[].path' > "$tmp/files" || die 'cannot read PR files'
   if [ -z "$source_file" ]; then
-    gh api "repos/{owner}/{repo}/contents/.github/CODEOWNERS?ref=$base" -H 'Accept: application/vnd.github.raw' > "$tmp/CODEOWNERS" || die 'cannot read base CODEOWNERS'
+    if ! gh api "repos/{owner}/{repo}/contents/.github/CODEOWNERS?ref=$base" -H 'Accept: application/vnd.github.raw' > "$tmp/CODEOWNERS" 2> "$tmp/err"; then
+      grep -q 'HTTP 404' "$tmp/err" && exit 1
+      die 'cannot read base CODEOWNERS'
+    fi
     source_file=$tmp/CODEOWNERS
   fi
 elif [ "$mode" = stdin ]; then
@@ -38,7 +42,10 @@ else
   [ "${#files[@]}" -gt 0 ] || die 'provide files, --stdin, or --pr'
   printf '%s\n' "${files[@]}" > "$tmp/files"
 fi
-[ -n "$source_file" ] || source_file="$root/.github/CODEOWNERS"
+if [ -z "$source_file" ]; then
+  source_file="$root/.github/CODEOWNERS"
+  [ -e "$source_file" ] || exit 1
+fi
 [ -r "$source_file" ] || die "cannot read CODEOWNERS: $source_file"
 
 # GitHub CODEOWNERS uses gitignore-style path patterns, but does not support
