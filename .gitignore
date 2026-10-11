@@ -4,12 +4,3 @@
 .DS_Store
 !**/.keep
 *.bak
-
-# >>> autoteam >>>
-# jscpd 报告目录；registry.yaml 里 env_file 指向的本地环境变量文件（可能含密钥）
-/report/
-/.autoteam/local/
-# npx skills add 安装的 skill 目录，避免把依赖代码提交进业务仓库
-/.claude/skills/
-/.agents/skills/
-# <<< autoteam <<<
