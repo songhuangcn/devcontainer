@@ -50,7 +50,7 @@ docker compose version
 make setup
 ```
 
-`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data/.claude`、`./data/.codex`、`./data/.config/opencode`。这三个目录是 `./config` 那四条嵌套挂载的父目录：缺失时 Docker daemon 会以 root 身份创建挂载点父目录，容器内的 `ubuntu` 用户就写不进去。
+`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data/.claude`、`./data/.codex`、`./data/.config/opencode`。这三个目录是 `./config` 那几条嵌套挂载的父目录：缺失时 Docker daemon 会以 root 身份创建挂载点父目录，容器内的 `ubuntu` 用户就写不进去。
 
 必需存在的只有 `.env` 和上面那三个目录。如果不想运行 `make setup`，也可以手动创建。OpenCode、Git、Claude 和 Codex 的可共享配置位于 `./config`，随版本库提供。
 
@@ -64,7 +64,7 @@ make setup
 make start
 ```
 
-OpenCode Web 默认地址为 `http://localhost:4096`。
+OpenCode Web 默认地址为 `http://localhost:4096`。首次打开是 OpenCode 自带的「连接到服务器」页：点 **Use password**，密码填 `.env` 里的 `OPENCODE_SERVER_PASSWORD`（必须自己配置，见下面「OpenCode」一节）。
 
 进入容器：
 
@@ -211,6 +211,18 @@ docker compose exec opencode sh -c 'stat -c "%n %s" ~/.gitconfig ~/.claude/setti
 `.enc`。全部无误后再删 `data.old`；`../devcontainer-data-backup-*` 留久一点。
 漏捞了随时从这两处补。
 
+## OpenCode
+
+镜像装的是 OpenCode 2.x。2.x 只发布到 npm 的 `@opencode/cli`（GitHub 上只有 tag 没有 release），所以 `mise.toml` 里写的是 `"npm:@opencode/cli"`，不是 mise 内置的 `opencode`（后者走 GitHub release，只能装到 1.x）。这个包靠 postinstall 从平台包里拷出真正的二进制，而 mise 默认不跑依赖的安装脚本，所以要用 `allow_builds` 放行，否则装出来的 `opencode` 一运行就报 postinstall 没执行。
+
+和 1.x 不同、影响这个仓库的几点：
+
+- **Web UI**：`opencode web` 没了，改由 `opencode serve` 同时提供 API 和 Web UI。`serve` 必须带密码，读 `OPENCODE_PASSWORD`，旧名 `OPENCODE_SERVER_PASSWORD` 仍然认；都没配时每次启动随机生成一个。Web UI 的页面本身不设防，打开后在自带的登录页里输密码；所有 API（包括 `/api/info`）都要 Basic Auth（用户名固定 `opencode`），原来的 `/global/health` 也不存在了，所以 compose 健康检查带着 `.env` 里的密码打 `/api/info`，k8s 探针继续用 `tcpSocket`。
+- **关掉常驻后台服务**：2.x 的 `opencode run`、TUI 等命令默认连一个常驻后台服务（`opencode serve --service`，监听 `127.0.0.1:49374`），找不到就拉起一个，靠 `~/.local/state/opencode/service.json` 发现彼此。这里三个容器共享同一个 home 和同一个 `opencode.db`，这套机制会出两个问题：compose 下各容器网络隔离，A 容器注册的 `127.0.0.1` 在 B 容器里连不上，B 会另起一个并覆盖注册文件，A 的服务发现自己被替换就退出，正在跑的 Multica 任务跟着断掉；后台服务启动时还会把库里「执行中但不属于自己」的会话当成崩溃遗留接着跑，而它分不出这些会话其实正在 `opencode` 容器的 `serve` 里跑着。所以 `config/opencode-service.json` 写了 `{"disabled": true}`，挂到 `~/.config/opencode/service.json`：每次 `opencode run`/TUI 都自带一个私有子进程服务器，进程模型和 1.x 一样，也不会去接管别的会话。代价是每次 `run` 多一次服务器启动（实测约 0.4 秒），以及 `opencode service set`、`opencode pair` 这类会写这个文件的命令用不了。
+- **会话数据**：2.x 和 1.x 共用 `~/.local/share/opencode/opencode.db`，首次启动会在后台把 1.x 的会话迁移到同一个库里的新表，旧表保留（本地 2.3G、511 个会话的库约 15 秒迁完，期间 Web UI 可用）。升级前按「一次性数据迁移」一节的方式停容器备份一份 `opencode.db*`，回退时用得上。
+- **配置**：`config/opencode.jsonc` 仍是 1.x 写法，2.x 原样兼容（`permission` 会归一成 `permissions`，`small_model` 变成内置 `title` agent 的模型，`disabled_providers` 变成 policy）。
+- **Multica**：当前固定的 Multica 0.6.1 会按 `opencode --version` 识别 2.x 并切换参数（`--dir`、`--variant` 在 2.x 里被移除）。但 2.x 只能从任务工作目录里的 `opencode.json` 读 MCP 配置，Multica 不愿把凭据写进 agent 可能 `git add` 的目录，所以**带 MCP server 的任务会被直接拒绝**（报错里会写明原因）；这类 agent 要么去掉 MCP，要么换成别的 runtime。
+
 ## Multica daemon
 
 镜像从 Multica 官方 release 安装 Dockerfile 中固定的 CLI 版本（当前为 0.6.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
@@ -253,7 +265,7 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 配置：根目录 Kustomize overlay 从 `config/` 生成带内容哈希的 ConfigMap，挂载 OpenCode、Git、Claude 和 Codex 配置；配置变化会触发 Pod 滚动更新。
 - 工具解析：mise 负责安装 provider CLI，但镜像会在 `/opt/agent-bin` 创建直达实际 CLI 的链接并置于 `/opt/mise/shims` 之前。Multica daemon 即使规范化可执行文件路径，也不会把 Codex 等 provider 错误启动成 mise task runner；可用 `smoke-agent-cli-launchers` 在任意空白目录复验。
 - 首启初始化：`opencode`、`multica` 两个容器都**只写 `args:`，不写 `command:`**。`command:` 会覆盖镜像 ENTRYPOINT `devcontainer-home-init`，首启就不会把 `/opt/home-skel` 补进空卷，也不会建立 Claude Code 到 `~/.agents` 的用户指令和 skills 软链（Java 镜像还会缺少 vscode-server 软链）。`livenessProbe.exec.command` 不经过 ENTRYPOINT，不受影响。`app` 容器连 `args:` 都不写，直接走镜像默认 CMD（`sleep infinity`），只作为共享 home/workspace 的通用 exec 入口，跟 `opencode` 隔离开。
-- 鉴权：`opencode web` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`（HTTP Basic Auth，用户名默认 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
+- 鉴权：`opencode serve` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`：Web UI 在自带登录页选 Use password 输入，API 客户端走 HTTP Basic Auth（用户名固定为 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
 - Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。device name 不再单独设置——Pod 固定了 `hostname: devcontainer-cloud`（同 UTS namespace，opencode/multica/app 都生效），`MULTICA_DAEMON_DEVICE_NAME` 未配置时 daemon 会读容器 hostname 当默认值，跟着显示 `devcontainer-cloud`。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode`、`multica` 和 `app` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
 - 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401。

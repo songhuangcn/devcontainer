@@ -1,7 +1,11 @@
 [tools]
 node = "22"
 python = "3.13"
-opencode = "1.18.35"
+# OpenCode 2.x 只发布到 npm 的 @opencode/cli；mise 内置的 `opencode` 走 GitHub
+# release（aqua/ubi），而 2.x 在 GitHub 上只有 tag 没有 release，装不到。
+# 真正的二进制由 postinstall 从平台包里拷出来，mise 默认不跑依赖的安装脚本，
+# 不放行的话 bin/opencode.exe 只是个报错退出的占位脚本。
+"npm:@opencode/cli" = { version = "2.0.32", allow_builds = ["@opencode/cli"] }
 codex = "0.162.1"
 claude = "2.1.296"
 gh = "2.102.0"

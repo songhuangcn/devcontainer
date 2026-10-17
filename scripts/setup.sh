@@ -23,7 +23,7 @@ create_env() {
 
 prepare_persistent_files() {
   # ./data 整挂到 /home/ubuntu，其余目录由镜像首启的 devcontainer-home-init 从
-  # /opt/home-skel 补进来。这里只预建 config/ 那四条嵌套挂载的父目录：缺失时
+  # /opt/home-skel 补进来。这里只预建 config/ 那几条嵌套挂载的父目录：缺失时
   # Docker daemon 会以 root 身份创建挂载点父目录，容器内的 ubuntu 就写不进去。
   mkdir -p \
     "${DATA_DIR}/.claude" \

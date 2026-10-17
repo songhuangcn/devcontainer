@@ -46,7 +46,7 @@ spec:
       initContainers:
       - name: fix-ownership
         image: busybox:1.36
-        # 除了卷根目录，还要预建 config-data 那四条 subPath 挂载的父目录：
+        # 除了卷根目录，还要预建 config-data 那几条 subPath 挂载的父目录：
         # kubelet 会以 root 补出缺失的挂载点父目录，而它比镜像 ENTRYPOINT 的
         # devcontainer-home-init 更早，所以 /opt/home-skel 兜不住这一步——空卷
         # 首启时 .claude/.codex/.config/opencode 会变成 root 所有，容器里的
@@ -79,7 +79,7 @@ spec:
           volumeMounts:
           - name: workspace
             mountPath: /workspace
-          # 整挂 home。必须排在下面四条 config-data 之前：kubelet 按声明顺序
+          # 整挂 home。必须排在下面几条 config-data 之前：kubelet 按声明顺序
           # 挂载，先挂子路径的话会被随后挂上的 /home/ubuntu 整个盖住。
           - name: user-data
             mountPath: /home/ubuntu
@@ -96,14 +96,19 @@ spec:
           - name: config-data
             mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
             subPath: opencode.jsonc
+          # 关掉 OpenCode 2.x 的常驻后台服务，原因见 README「OpenCode」一节。
+          - name: config-data
+            mountPath: /home/ubuntu/.config/opencode/service.json
+            subPath: opencode-service.json
         name: opencode
         # 不要加 command：它会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
-        args: ["opencode", "web", "--hostname", "0.0.0.0", "--port", "4096"]
+        # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。
+        args: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]
         ports:
         - containerPort: 4096
           name: opencode
-        # 注意：设置了 OPENCODE_SERVER_PASSWORD 后 /global/health 也会要求 Basic Auth，
-        # 探针拿不到密码会一直收到 401，所以用 tcpSocket 而不是 httpGet
+        # 2.x 的所有接口（含 /api/info）都要 Basic Auth，httpGet 探针拿不到密码
+        # 只会收到 401，所以用 tcpSocket
         livenessProbe:
           tcpSocket:
             port: 4096

@@ -7,6 +7,7 @@ configMapGenerator:
 - name: config-data
   files:
   - opencode.jsonc=config/opencode.jsonc
+  - opencode-service.json=config/opencode-service.json
   - .gitconfig=config/.gitconfig
   - claude-settings.json=config/claude-settings.json
   - codex-config.toml=config/codex-config.toml
