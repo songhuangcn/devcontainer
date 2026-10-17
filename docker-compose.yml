@@ -22,12 +22,15 @@ x-app-base: &app-base
       # 不会被这个卷遮住；新增工具不再需要在这里补挂载。
       - ./data:/home/ubuntu
       # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
-      # 这四条是 /home/ubuntu 的嵌套挂载，父目录必须已存在于 ./data，否则由
+      # 这几条是 /home/ubuntu 的嵌套挂载，父目录必须已存在于 ./data，否则由
       # Docker daemon 以 root 创建，容器内的 ubuntu 用户就写不进去（`make setup`）。
       - ./config/.gitconfig:/home/ubuntu/.gitconfig
       - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
       - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml
       - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
+      # 关掉 OpenCode 2.x 的常驻后台服务，`opencode run`/TUI 改为各自带一个私有
+      # 子进程服务器（同 1.x 的进程模型）。原因见 README「OpenCode」一节。
+      - ./config/opencode-service.json:/home/ubuntu/.config/opencode/service.json
 
 services:
   # 默认的通用工作容器：跟 opencode 服务隔离开，不带 opencode 专属的端口/健康
@@ -40,11 +43,14 @@ services:
       - "${SSH_PORT:-2222}:22"
   opencode:
     <<: *app-base
-    command: ["opencode", "web", "--hostname", "0.0.0.0", "--port", "${OPENCODE_PORT:-4096}"]
+    # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。
+    command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "${OPENCODE_PORT:-4096}"]
     ports:
       - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:$${OPENCODE_PORT:-4096}/global/health >/dev/null"]
+      # 2.x 的所有接口（含 /api/info）都要 Basic Auth，密码取自 .env 的
+      # OPENCODE_SERVER_PASSWORD；没配密码时 serve 每次启动随机生成，这里会一直不健康。
+      test: ["CMD-SHELL", "curl -fsS -u \"opencode:$${OPENCODE_SERVER_PASSWORD}\" http://127.0.0.1:$${OPENCODE_PORT:-4096}/api/info >/dev/null"]
       interval: 10s
       timeout: 3s
       retries: 5
