@@ -13,8 +13,8 @@ on:
       - README.md
       - scripts/**
       - config/**
+      - agents/**
       - deploy/**
-      - kustomization.yaml
       - .github/workflows/build-devcontainer.yml
   workflow_dispatch:
 
@@ -55,31 +55,23 @@ jobs:
             songhuangcn/devcontainer:commit-${{ steps.vars.outputs.short_sha }}
             songhuangcn/devcontainer:latest
 
-      - name: Verify home initialization
+      - name: Verify runtime scripts
         run: |
-          # Variables expand inside the test container, not in the runner shell.
-          # shellcheck disable=SC2016
-          docker run --pull always --rm --entrypoint bash \
+          IMAGE_TAG="commit-${{ steps.vars.outputs.short_sha }}" make test
+
+      - name: Verify runtime installation
+        run: |
+          docker run --pull always --rm \
             "songhuangcn/devcontainer:commit-${{ steps.vars.outputs.short_sha }}" \
-            -eu -o pipefail -c '
-              root=$(mktemp -d)
-              export HOME="$root/home"
-              mkdir -p "$HOME/.agents/skills/example" "$HOME/.claude/skills/legacy"
-              printf "agent instructions\n" > "$HOME/.agents/AGENTS.md"
-              printf "skill\n" > "$HOME/.agents/skills/example/SKILL.md"
-              printf "legacy instructions\n" > "$HOME/.claude/CLAUDE.md"
-              printf "legacy skill\n" > "$HOME/.claude/skills/legacy/SKILL.md"
-
-              DEVCONTAINER_SKEL="$root/skel" devcontainer-home-init true
-
-              test "$(readlink "$HOME/.claude/CLAUDE.md")" = "../.agents/AGENTS.md"
+            bash -eu -o pipefail -c '
+              test ! -x "$MISE_INSTALL_PATH"
+              cp -a /opt/agents/. "$HOME/.agents/"
+              install.sh
+              smoke-agent-cli-launchers
               test -r "$HOME/.claude/CLAUDE.md"
-              test "$(readlink "$HOME/.claude/skills")" = "../.agents/skills"
-              test -f "$HOME/.claude/skills/example/SKILL.md"
-              test -f "$HOME/.claude/CLAUDE.md.before-agents-link"
-              test -f "$HOME/.claude/skills.before-agents-link/legacy/SKILL.md"
-
-              DEVCONTAINER_SKEL="$root/skel" devcontainer-home-init true
+              test -d "$HOME/.claude/skills"
+              docker compose version
+              mise exec -- python -c "import defusedxml, jsonschema, numpy, pypdf, pymupdf, yaml, requests, ruamel.yaml, urllib3"
             '
 
   deploy:
@@ -102,8 +94,7 @@ jobs:
 
       - name: Deploy to Kubernetes
         run: |
-          kubectl apply -k ./
-          kubectl rollout status deployment/app -n devcontainer --timeout=5m
+          make deploy.apply
 
       - name: Verify deployment
         run: |

@@ -1,24 +1,26 @@
 export COMPOSE_PROJECT_NAME = workspace-devcontainer
 
 COMPOSE = docker compose -f docker-compose.yml
+SHELL = /bin/bash
+.SHELLFLAGS = -eu -o pipefail -c
 
 # .github/workflows/autoteam.yml 在 PR 上只调 `make check`，合并后调 `make deploy`（autoteam 的成员仓库约定）。
 SHELLCHECK_IMAGE = koalaman/shellcheck:v0.10.0
 HADOLINT_IMAGE = hadolint/hadolint:v2.12.0
 
 .PHONY: check
-check: ## 全部检查：shellcheck、docker compose 配置校验、hadolint
+check: ## 脚本/Dockerfile 检查、Compose/Kustomize 校验、运行时脚本测试
 	@# 用 docker 跑，本机不需要安装 shellcheck / hadolint；文件走 stdin，不依赖 bind mount
-	@set -e; for f in $$(find scripts dockerfiles -name '*.sh' | sort); do \
+	@set -e; for f in $$(find scripts -name '*.sh' | sort); do \
 		echo "shellcheck $$f"; \
 		docker run --rm -i $(SHELLCHECK_IMAGE) - < "$$f"; \
 	done
 	@# docker-compose.yml 引用了 .env，缺失时用示例文件占位（.env 已在 .gitignore）
 	@[ -f .env ] || cp .env.sample .env
 	$(COMPOSE) config -q
-	@# DL3004：Dockerfile 里有意用 sudo，本任务不改镜像内容，先忽略
-	docker run --rm -i $(HADOLINT_IMAGE) hadolint --failure-threshold error --ignore DL3004 - < Dockerfile
-	docker run --rm -i $(HADOLINT_IMAGE) hadolint --failure-threshold error --ignore DL3004 - < dockerfiles/Dockerfile.java
+	docker run --rm -i $(HADOLINT_IMAGE) hadolint --failure-threshold error - < Dockerfile
+	$(MAKE) test
+	$(MAKE) deploy.config > /dev/null
 
 .PHONY: dev
 dev: ## 一条命令起环境，可重复执行：准备 .env 和数据目录，启动 app 与 Docker-in-Docker
@@ -26,12 +28,22 @@ dev: ## 一条命令起环境，可重复执行：准备 .env 和数据目录，
 	$(COMPOSE) up -d app
 
 .PHONY: deploy
-deploy: ## 等本次提交的镜像构建（build-devcontainer*.yml）成功，构建成功即视为上线
+deploy: ## 等本次提交的主镜像构建与部署成功
 	bash scripts/wait-build.sh "$$(git rev-parse HEAD)"
 
 .PHONY: setup
 setup:
 	bash scripts/setup.sh
+
+.PHONY: install
+install: setup ## 独立安装/更新 mise、工具链及 Python 依赖到持久化 home
+	$(COMPOSE) run --rm --no-deps app install.sh
+
+.PHONY: test
+test: ## 在主镜像中验证入口和安装脚本（不下载工具、不接触真实 data）
+	tar -cf - scripts/entrypoint.sh scripts/install.sh scripts/test-runtime.sh | \
+		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
+		-c 'root=$$(mktemp -d); tar -xf - -C "$$root"; bash "$$root/scripts/test-runtime.sh"'
 
 .PHONY: run
 run:
@@ -93,7 +105,11 @@ ssh:
 	ssh -p 2222 ubuntu@localhost
 
 .PHONY: update
-update: pull down start
+update:
+	$(MAKE) pull
+	$(MAKE) down
+	$(MAKE) install
+	$(MAKE) start
 
 .PHONY: pull
 pull:
@@ -124,12 +140,12 @@ deploy.encode: # 把明文 deploy/app-secret.yaml 加密成 deploy/app-sealed-se
 
 .PHONY: deploy.config
 deploy.config: # 本地预览 kustomize 渲染结果，不实际 apply
-	kubectl kustomize ./
+	kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone
 
 .PHONY: deploy.apply
 deploy.apply: # 应用 deploy/ 到集群
-	kubectl apply -k ./
-	kubectl rollout status deployment/app -n devcontainer --timeout=5m
+	kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone | kubectl apply -f -
+	kubectl rollout status deployment/app -n devcontainer --timeout=20m
 
 .PHONY: deploy.status
 deploy.status: # 查看当前部署状态

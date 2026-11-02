@@ -1,5 +1,4 @@
 /data
-/agents
 .env
 .DS_Store
 !**/.keep

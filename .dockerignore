@@ -1,6 +1,6 @@
 data
 config
-agents
+.git
 .env
 .DS_Store
 !**/.keep

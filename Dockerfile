@@ -15,7 +15,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     biber \
     build-essential \
     clang \
-    default-jre-headless \
     fontconfig \
     fonts-croscore \
     fonts-dejavu \
@@ -116,94 +115,35 @@ RUN curl -fsSL "https://raw.githubusercontent.com/autoteam-ai/autoteam/${AUTOTEA
 # 和 `pr merge --auto` 的若干修复，都是 agent 会用到的；官方 apt 源又只提供
 # stable，装到的是构建当天的版本，不可复现。它在 mise 的 registry 里
 # （aqua:cli/cli，带 checksum 校验），所以和 node/python/agent CLI 一起写进
-# mise.toml 统一管版本。multica 不在 registry 里，只能留着上面那段固定 URL。
-
-# 镜像自带的一切都放在 /opt，构建结束时 /home/ubuntu 必须是空的。
-#   /opt/mise       mise 数据目录（installs/shims/downloads/state/cache）
-#   /opt/agent-bin  provider CLI 直连软链，PATH 中排在 shims 之前
-#   /opt/home-skel  首启种子目录，由 devcontainer-home-init 补进 home 卷
-RUN mkdir -p /opt/mise/bin /opt/agent-bin /opt/home-skel \
-    && cp -a /etc/skel/. /opt/home-skel/ \
-    && chown -R ubuntu:ubuntu /opt/mise /opt/agent-bin /opt/home-skel
+# mise.toml 统一管版本，由容器启动后的 install.sh 安装。
+# multica 不在 registry 里，只能留着上面那段固定 URL。
 
 USER ubuntu
 
 WORKDIR /workspace
 
-# mise 的数据/状态/缓存搬出 home。刻意不设 MISE_CONFIG_DIR：全局配置继续用
-# /etc/mise/config.toml（mise 的 system config），这是当前镜像已验证可用的
-# 路径；改动它才是 HDGCS-4 回退的真实风险点。
+# 工具在启动后安装到持久化 home，供所有应用容器共享。
+# 全局工具清单仍使用 mise 的 system config：/etc/mise/config.toml。
 ENV TZ=Asia/Shanghai \
     LANG=zh_CN.UTF-8 \
     LANGUAGE=zh_CN:zh \
     LC_ALL=zh_CN.UTF-8 \
     SHELL=/bin/bash \
-    MISE_INSTALL_PATH=/opt/mise/bin/mise \
-    MISE_DATA_DIR=/opt/mise \
-    MISE_CACHE_DIR=/opt/mise/cache \
-    MISE_STATE_DIR=/opt/mise/state \
-    PATH=/opt/agent-bin:/opt/mise/bin:/opt/mise/shims:$PATH \
+    MISE_INSTALL_PATH=/home/ubuntu/.local/bin/mise \
+    MISE_DATA_DIR=/home/ubuntu/.local/share/mise \
+    MISE_CACHE_DIR=/home/ubuntu/.cache/mise \
+    MISE_STATE_DIR=/home/ubuntu/.local/state/mise \
+    PATH=/home/ubuntu/.local/share/agent-bin:/home/ubuntu/.local/bin:/home/ubuntu/.local/share/mise/shims:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-RUN curl -fsSL https://mise.run | sh
-
 COPY mise.toml /etc/mise/config.toml
 COPY --chmod=755 scripts/smoke-agent-cli-launchers.sh /usr/local/bin/smoke-agent-cli-launchers
-COPY --chmod=755 scripts/home-init.sh /usr/local/bin/devcontainer-home-init
+COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --chmod=755 scripts/install.sh /usr/local/bin/install.sh
 COPY --chmod=755 scripts/start-sshd.sh /usr/local/bin/devcontainer-start-sshd
+# Compose 使用仓库目录覆盖；Kubernetes 首启复制到 Pod 的共享 agents 卷。
+COPY --chown=ubuntu:ubuntu agents/ /opt/agents/
 
-# NPM_CONFIG_CACHE 只在本层生效：mise 的 npm backend（npm:@larksuite/cli）会把
-# npm 缓存写进 ~/.npm，那是 home 里唯一一处几百 MB 级的构建残留。运行时仍用
-# 默认的 ~/.npm（已随整挂持久化），所以不放进 ENV。
-RUN NPM_CONFIG_CACHE=/tmp/npm-cache mise install \
-    # Multica resolves provider executables to their canonical paths before launch.
-    # A mise shim therefore turns back into the mise binary and is misinterpreted
-    # as a task invocation. Put direct tool links ahead of the shim directory.
-    && for tool in codex claude opencode; do \
-        ln -sf "$(mise which "${tool}")" "/opt/agent-bin/${tool}"; \
-    done \
-    && sudo mkdir -p /usr/local/lib/docker/cli-plugins \
-    && sudo ln -sf "$(mise which docker-compose)" /usr/local/lib/docker/cli-plugins/docker-compose \
-    && smoke-agent-cli-launchers \
-    && mise cache clear \
-    && rm -rf /tmp/npm-cache
-
-RUN mise exec -- python -m pip install --no-cache-dir \
-    defusedxml \
-    "jsonschema[format]>=4.17" \
-    numpy \
-    pypdf \
-    pymupdf \
-    pyyaml \
-    requests~=2.32.5 \
-    "ruamel.yaml>=0.17" \
-    urllib3~=2.6.3
-
-# 原来的 `mkdir -p ~/.vscode-server ~/.m2 ...` 在整挂 home 后毫无意义（会被卷
-# 遮住），改为写进 skel，由首启的 devcontainer-home-init 补进卷里。
-# .claude / .codex / .config/opencode 是 config 嵌套挂载的父目录，必须存在，
-# 否则 Docker daemon 和 kubelet 会以 root 身份创建它们。
-# 刻意不建 .local/bin：不存在时 .profile 的 PATH 前置分支不会触发。
-RUN mkdir -p \
-        /opt/home-skel/.vscode-server \
-        /opt/home-skel/.m2 \
-        /opt/home-skel/.claude \
-        /opt/home-skel/.codex \
-        /opt/home-skel/.config/opencode \
-        /opt/home-skel/.multica \
-        /opt/home-skel/multica_workspaces \
-        /opt/home-skel/.cache \
-        /opt/home-skel/.npm \
-    && install -d -m 700 /opt/home-skel/.ssh
-
-# 把镜像内容全部搬出 /home/ubuntu 并断言为空。这不是"清理"，是构建期硬约束：
-# 以后谁往 home 里写东西，构建直接失败。
-RUN find /home/ubuntu -mindepth 1 -delete \
-    && if [ -n "$(ls -A /home/ubuntu)" ]; then \
-         echo "FATAL: /home/ubuntu is not empty after build:" >&2; \
-         ls -A /home/ubuntu >&2; exit 1; \
-       fi
-
-ENTRYPOINT ["/usr/local/bin/devcontainer-home-init", "--exec"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["sleep", "infinity"]

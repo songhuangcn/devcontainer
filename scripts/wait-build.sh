@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# 等指定提交触发的镜像构建工作流结束；"上线"即构建成功。
-# 两个构建工作流都有 push paths 过滤：先按改动文件判断这次提交该不该触发它——
+# 等指定提交触发的主镜像构建工作流结束（包括安装验证和部署）。
+# 构建工作流有 push paths 过滤：先按改动文件判断这次提交该不该触发它——
 # 确认不触发才跳过；该触发却迟迟没出现 run、或任何 GitHub 查询失败，都按失败处理。
 # 用法：GH_TOKEN=... scripts/wait-build.sh <完整提交 sha>（make deploy 传当前检出的 HEAD，回滚时即回滚目标）
 set -euo pipefail
 
 sha=${1:?用法：wait-build.sh <sha>}
-workflows=(build-devcontainer.yml build-devcontainer-java.yml)
+workflows=(build-devcontainer.yml)
 appear_timeout=${APPEAR_TIMEOUT:-120}
 finish_timeout=${FINISH_TIMEOUT:-3600}
 interval=${POLL_INTERVAL:-15}
@@ -85,7 +85,7 @@ wait_workflow() {
       conclusion=$(jq -r .conclusion <<<"$run")
       if [ "$status" = completed ]; then
         if [ "$conclusion" = success ]; then
-          log "$wf：构建成功。"
+          log "$wf：构建、验证和部署成功。"
           return 0
         fi
         log "$wf：构建结束但结论是 $conclusion。"
