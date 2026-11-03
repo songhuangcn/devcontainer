@@ -4,7 +4,7 @@ x-app-base: &app-base
   # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
   image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
   build: .
-  # 固定 hostname，而不是让每个容器各拿一个随机的 Docker 短 ID。app/opencode/
+  # 固定 hostname，而不是让每个容器各拿一个随机的 Docker 短 ID。opencode/
   # multica 共享同一份 home/workspace，本就是同一个"机器"身份；multica 在
   # MULTICA_DAEMON_DEVICE_NAME 未设置时会读 os.Hostname() 当默认值（已读源码
   # 验证：server/internal/daemon/config.go 的 `deviceName := envOrDefault(
@@ -37,14 +37,6 @@ x-app-base: &app-base
       - ./config/opencode-service.json:/home/ubuntu/.config/opencode/service.json
 
 services:
-  # 默认的通用工作容器：跟 opencode 服务隔离开，不带 opencode 专属的端口/健康
-  # 检查。启动 sshd 作为前台进程，提供一个可以从宿主机 SSH 进来的共享
-  # home/workspace 入口（host key 持久化在 ./data，见 scripts/start-sshd.sh）。
-  app:
-    <<: *app-base
-    command: ["bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
-    ports:
-      - "${SSH_PORT:-2222}:22"
   opencode:
     <<: *app-base
     # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。

@@ -33,7 +33,7 @@ spec:
         app: devcontainer
     spec:
       # 固定 Pod hostname，而不是让每次滚动更新都换一个随机的 Pod 短 ID。
-      # Pod 内的容器共享同一个 UTS namespace，这个值对 opencode/multica/app
+      # Pod 内的容器共享同一个 UTS namespace，这个值对 opencode/multica
       # 都生效；multica 在 MULTICA_DAEMON_DEVICE_NAME 未设置时会读
       # os.Hostname() 当默认值（已读源码验证：server/internal/daemon/
       # config.go 的 `deviceName := envOrDefault("MULTICA_DAEMON_DEVICE_NAME",
@@ -207,32 +207,8 @@ spec:
           limits:
             memory: "1Gi"
             cpu: "1"
-      - <<: *app-base
-        name: app
-        # 跟 opencode、multica 隔离开，不带它们专属的端口/健康检查。启动 sshd
-        # 作为前台进程，提供一个可以从集群外 SSH 进来的共享 home/workspace 入口
-        # （host key 持久化在 user-data-pvc，见 scripts/start-sshd.sh）。
-        # 不要加 command：会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
-        args: ["bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
-        ports:
-        - containerPort: 22
-          name: ssh
-        readinessProbe:
-          tcpSocket:
-            port: 22
-          initialDelaySeconds: 5
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-        resources:
-          requests:
-            memory: "128Mi"
-            cpu: "50m"
-          limits:
-            memory: "1Gi"
-            cpu: "500m"
       # Docker-in-Docker sidecar：与应用容器共享同一个 Pod network namespace，
-      # opencode、multica 和 app 通过 DOCKER_HOST=tcp://localhost:2375 连接
+      # opencode 和 multica 通过 DOCKER_HOST=tcp://localhost:2375 连接
       - name: dind
         image: docker:28-dind
         securityContext:
