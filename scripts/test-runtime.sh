@@ -9,25 +9,23 @@ export HOME="${root}/home"
 mkdir -p "${HOME}"
 chmod 700 "${HOME}"
 
-# Compose 在启动容器之前准备嵌套挂载目录；重复 setup 保留配置、数据和权限。
+# Compose 在启动容器之前准备 home 卷根；重复 setup 保留配置、数据和权限。
 setup_root="${root}/workspace/.devcontainer"
 mkdir -p "${setup_root}/scripts"
 cp "${SCRIPT_DIR}/setup.sh" "${setup_root}/scripts/setup.sh"
 printf 'TEST_SETTING=default\n' > "${setup_root}/.env.sample"
 bash "${setup_root}/scripts/setup.sh"
 cmp "${setup_root}/.env.sample" "${setup_root}/.env"
-for directory in .agents .claude .codex .config/mise .config/opencode; do
-  test -d "${setup_root}/data/${directory}"
-  test -w "${setup_root}/data/${directory}"
-  test "$(stat -c %u "${setup_root}/data/${directory}")" = "$(id -u)"
-done
+test -d "${setup_root}/data"
+test -w "${setup_root}/data"
+test "$(stat -c %u "${setup_root}/data")" = "$(id -u)"
 printf 'TEST_SETTING=custom\n' > "${setup_root}/.env"
-printf 'user data\n' > "${setup_root}/data/.claude/existing"
-chmod 700 "${setup_root}/data/.claude"
+printf 'user data\n' > "${setup_root}/data/existing"
+chmod 700 "${setup_root}/data"
 bash "${setup_root}/scripts/setup.sh"
 test "$(cat "${setup_root}/.env")" = 'TEST_SETTING=custom'
-test "$(cat "${setup_root}/data/.claude/existing")" = 'user data'
-test "$(stat -c %a "${setup_root}/data/.claude")" = 700
+test "$(cat "${setup_root}/data/existing")" = 'user data'
+test "$(stat -c %a "${setup_root}/data")" = 700
 
 # 空 home 从 /etc/skel 补齐；已有用户文件不覆盖；参数和退出码原样传递。
 bash "${SCRIPT_DIR}/entrypoint.sh"
@@ -40,17 +38,40 @@ rc=0
 bash "${SCRIPT_DIR}/entrypoint.sh" bash -c 'exit 23' || rc=$?
 test "${rc}" = 23
 
+# 使用隔离仓库测试配置迁移、双向写回和源文件的原子替换。
+runtime="${root}/runtime"
+mkdir -p "${runtime}/agents/skills/example" "${HOME}/.config/mise" \
+  "${HOME}/.agents" "${HOME}/.claude/skills/legacy"
+cp -a "${SCRIPT_DIR}" "${runtime}/scripts"
+cp -a "${SCRIPT_DIR}/../config" "${runtime}/config"
+printf 'instructions\n' > "${runtime}/agents/AGENTS.md"
+printf 'skill\n' > "${runtime}/agents/skills/example/SKILL.md"
+printf 'legacy mise config\n' > "${HOME}/.config/mise/config.toml"
+printf 'legacy agents\n' > "${HOME}/.agents/AGENTS.md"
+printf 'legacy instructions\n' > "${HOME}/.claude/CLAUDE.md"
+printf 'legacy skill\n' > "${HOME}/.claude/skills/legacy/SKILL.md"
+bash "${runtime}/scripts/setup-user.sh"
+test "$(readlink "${HOME}/.config/mise/config.toml")" = "${runtime}/config/mise.toml"
+test "$(cat "${HOME}/.config/mise/config.toml.before-workspace-link")" = 'legacy mise config'
+test "$(cat "${HOME}/.agents.before-workspace-link/AGENTS.md")" = 'legacy agents'
+printf '\n# edited in home\n' >> "${HOME}/.config/mise/config.toml"
+grep -q '# edited in home' "${runtime}/config/mise.toml"
+cp "${runtime}/config/mise.toml" "${runtime}/config/mise.new"
+printf '# atomically replaced source\n' >> "${runtime}/config/mise.new"
+mv "${runtime}/config/mise.new" "${runtime}/config/mise.toml"
+grep -q '# atomically replaced source' "${HOME}/.config/mise/config.toml"
+GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="${HOME}/.gitconfig" git config --global workspace.test true
+test "$(git config -f "${runtime}/config/.gitconfig" workspace.test)" = true
+test -L "${HOME}/.gitconfig"
+rc=0
+bash "${runtime}/scripts/start.sh" bash -c 'test "$1" = "two words"; exit 23' -- 'two words' || rc=$?
+test "${rc}" = 23
+
 # 隔离测试所用的旧镜像环境；被测脚本仅使用 mise 默认用户目录。
 unset MISE_INSTALL_PATH MISE_DATA_DIR MISE_CACHE_DIR MISE_STATE_DIR
 export TEST_BIN="${root}/bin" TEST_LOG="${root}/commands.log" TEST_FIXTURES="${root}/fixtures"
 export TMPDIR="${root}/tmp"
-mkdir -p "${TEST_BIN}" "${TEST_FIXTURES}" "${TMPDIR}" "${HOME}/.config/mise" \
-  "${HOME}/.agents/skills/example" "${HOME}/.claude/skills/legacy"
-cp "${SCRIPT_DIR}/../config/mise.toml" "${HOME}/.config/mise/config.toml"
-printf 'instructions\n' > "${HOME}/.agents/AGENTS.md"
-printf 'skill\n' > "${HOME}/.agents/skills/example/SKILL.md"
-printf 'legacy instructions\n' > "${HOME}/.claude/CLAUDE.md"
-printf 'legacy skill\n' > "${HOME}/.claude/skills/legacy/SKILL.md"
+mkdir -p "${TEST_BIN}" "${TEST_FIXTURES}" "${TMPDIR}"
 
 cat > "${TEST_BIN}/curl" <<'SH'
 #!/usr/bin/env bash
@@ -127,7 +148,7 @@ done
 chmod +x "${TEST_BIN}"/*
 export PATH="${TEST_BIN}:${PATH}"
 
-bash "${SCRIPT_DIR}/install.sh"
+bash "${runtime}/scripts/install.sh"
 test -x "${HOME}/.local/bin/mise"
 test -x "${HOME}/.local/bin/multica"
 test -x "${HOME}/.local/bin/autoteam"
@@ -140,7 +161,7 @@ test -f "${HOME}/.claude/CLAUDE.md.before-agents-link"
 test -f "${HOME}/.claude/skills.before-agents-link/legacy/SKILL.md"
 
 # 重复安装保留用户备份，不重复引导 mise，并清理临时下载目录。
-bash "${SCRIPT_DIR}/install.sh"
+bash "${runtime}/scripts/install.sh"
 test "$(grep -c '^download https://mise.run$' "${TEST_LOG}")" = 1
 test "$(grep -c '^mise install --yes (' "${TEST_LOG}")" = 2
 test "$(grep -c '^smoke$' "${TEST_LOG}")" = 2
@@ -149,7 +170,7 @@ test -z "$(ls -A "${TMPDIR}")"
 # 校验失败不能覆盖旧工具，也不能继续 smoke。
 for tool in multica autoteam; do
   printf 'existing tool\n' > "${HOME}/.local/bin/${tool}"
-  if TEST_FAIL_CHECKSUM="${tool}" bash "${SCRIPT_DIR}/install.sh"; then
+  if TEST_FAIL_CHECKSUM="${tool}" bash "${runtime}/scripts/install.sh"; then
     printf 'Expected checksum failure for %s\n' "${tool}" >&2
     exit 1
   fi
@@ -160,17 +181,19 @@ done
 # 已有备份时拒绝覆盖；依赖安装失败时不得继续执行 smoke。
 rm "${HOME}/.claude/CLAUDE.md"
 printf 'new instructions\n' > "${HOME}/.claude/CLAUDE.md"
-if bash "${SCRIPT_DIR}/install.sh"; then
+if bash "${runtime}/scripts/install.sh"; then
   printf 'Expected backup conflict to fail\n' >&2
   exit 1
 fi
 test "$(cat "${HOME}/.claude/CLAUDE.md")" = 'new instructions'
+rm "${HOME}/.claude/CLAUDE.md"
+ln -s ../.agents/AGENTS.md "${HOME}/.claude/CLAUDE.md"
 cat > "${HOME}/.local/bin/mise" <<'SH'
 #!/usr/bin/env bash
 exit 42
 SH
 rc=0
-bash "${SCRIPT_DIR}/install.sh" || rc=$?
+bash "${runtime}/scripts/install.sh" || rc=$?
 test "${rc}" = 42
 test "$(grep -c '^smoke$' "${TEST_LOG}")" = 2
 
@@ -186,4 +209,5 @@ if env -u MULTICA_TOKEN bash "${SCRIPT_DIR}/start-multica.sh"; then
   printf 'Expected missing token to fail\n' >&2
   exit 1
 fi
+bash "${SCRIPT_DIR}/test-sync-runtime.sh"
 printf 'Runtime script tests passed.\n'

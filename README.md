@@ -7,8 +7,10 @@
 - `docker-compose.yml`：用共享 base 配置分别启动工作容器 `app`（SSH）、`opencode`、`multica`，并提供 Docker-in-Docker service `docker`。
 - `Dockerfile`：只构建一个基础镜像，包含系统开发依赖、字体和论文输出工具链，仅复制 `entrypoint.sh`。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口（指向 `app` service），不再使用 devcontainer features。
-- `scripts/setup.sh`：创建 `.env`，并预建 `./data` 下嵌套挂载所需的目录。
+- `scripts/setup.sh`：创建 `.env` 和持久化 home 目录 `./data`。
 - `scripts/entrypoint.sh`：从 `/etc/skel` 补齐缺失的默认用户文件，然后执行容器命令。
+- `scripts/start.sh`、`scripts/setup-user.sh`：应用启动前，将用户配置、指令和 skills 链接到可写仓库。
+- `scripts/sync-runtime.sh`：生产 Pod 启动前更新持久化仓库，保留本地修改，遇到冲突停止。
 - `scripts/install.sh`：容器启动后安装 mise、`config/mise.toml` 中的工具、Python 依赖、Multica 和 Autoteam 启动器。
 - `config/`、`agents/`：纳入版本控制的工具配置、用户指令和 skills。
 - `deploy/`：完整的 Kubernetes 部署配置，包括唯一的 `kustomization.yaml`。
@@ -44,19 +46,21 @@ make install
 make start
 ```
 
-`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data/.agents`、`./data/.claude`、`./data/.codex`、`./data/.config/mise`、`./data/.config/opencode`，避免 Docker daemon 以 root 身份创建嵌套挂载需要的目录。启动服务前填写 `.env` 中的 `OPENCODE_SERVER_PASSWORD` 和 `MULTICA_TOKEN`。
+`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data`，避免 Docker daemon 以 root 身份创建 home 卷根。启动服务前填写 `.env` 中的 `OPENCODE_SERVER_PASSWORD` 和 `MULTICA_TOKEN`。
 
-`make install` 先启动 `app`，再执行 `docker compose exec -T app bash /workspace/.devcontainer/scripts/install.sh`。仓库随工作区挂载到 `/workspace/.devcontainer`，脚本直接使用这一路径，无需额外挂载；修改脚本后可直接重跑，不需要先启动 OpenCode 或 Multica。脚本串行安装用户工具，并建立 Compose plugin 入口及 Claude 的用户指令、skills 软链。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
+`make install` 先启动 `app`，再执行 `docker compose exec -T app bash /workspace/.devcontainer/scripts/install.sh`。仓库随工作区挂载到 `/workspace/.devcontainer`，脚本直接使用这一路径，无需额外挂载；修改脚本后可直接重跑，不需要先启动 OpenCode 或 Multica。脚本准备用户配置链接、串行安装工具，并建立 Compose plugin 入口。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
 
-`docker-compose.yml` 把 `./data` 整挂到 `/home/ubuntu`，再用 `./config` 的文件和 `./agents` 目录覆盖对应路径。默认用户文件直接从 `/etc/skel` 补齐，只补缺失项，已有 `.bashrc`、`.profile` 永远不会被覆盖。`install.sh` 创建 `~/.claude/CLAUDE.md -> ../.agents/AGENTS.md` 和 `~/.claude/skills -> ../.agents/skills`；如目标原先是实体文件或目录，会先保留为同名的 `.before-agents-link`。
+`docker-compose.yml` 只挂载工作区和整个 home。`start.sh` 在应用启动前执行 `setup-user.sh`，将 Git、Claude、Codex、mise、OpenCode 的配置链接到仓库的 `config/`，将 `~/.agents` 链接到仓库的 `agents/`；不使用只读配置或单文件挂载。容器内修改配置会直接写回工作树，宿主机编辑仓库文件也立即可见。已有配置和指令会先保留为同名的 `.before-workspace-link`；Claude 的 `CLAUDE.md` 和 `skills` 使用 `.before-agents-link`。备份已存在时拒绝覆盖。默认用户文件从 `/etc/skel` 补齐，已有 `.bashrc`、`.profile` 永远不会被覆盖。
+
+编辑器若通过替换文件保存，应直接编辑仓库路径或软链的真实路径，避免把用户路径的软链替换成独立文件。
 
 mise、Multica 和 Autoteam 启动器安装在 `~/.local/bin`；mise 使用默认的用户数据、缓存、状态目录，不设置 `MISE_*` 环境变量或专用 provider 目录。Compose plugin 位于 `~/.docker/cli-plugins/docker-compose`。这些内容随 home 持久化，由用户自行管理。
 
 OpenCode 和 Multica 服务通过 login shell 执行 `mise exec -- …`，使用真实工具路径而不是 mise shim；`make bash` 也会进入 mise 工具环境。普通 SSH shell 可运行 `mise exec -- <命令>`，或自行在 `~/.bashrc` 配置 `eval "$(mise activate bash)"`；安装脚本不会修改用户 shell 配置。
 
-只启动 SSH 工作容器时可用 `make dev`；需要工具时再执行 `make install`。`config/mise.toml` 与其他配置一样，挂载到用户默认路径 `~/.config/mise/config.toml`；修改版本后直接 `make install` 即可。常规重启无需重新安装；`make update` 会依次拉取镜像、停止服务、安装工具并重新启动。
+只启动 SSH 工作容器时可用 `make dev`；需要工具时再执行 `make install`。`~/.config/mise/config.toml` 链接到 `/workspace/.devcontainer/config/mise.toml`，支持在容器内调整工具版本；修改版本后直接 `make install` 即可。常规重启无需重新安装；`make update` 会依次拉取镜像、停止服务、安装工具并重新启动。
 
-本地修改 `agents/skills` 会直接对所有应用容器生效。提交并推送后，CI 会部署对应的仓库提交，生产 Pod 从仓库获取脚本和 skills，无需手工同步，也不会保留已删除的 skill。挂载配置变化后需重建容器才能生效。
+本地修改 `agents/skills` 会直接对所有应用容器生效。配置与 skills 的写回只修改工作树，不自动提交或推送；需要同步到其他环境时自行检查 diff、提交并推送，避免将凭据纳入版本控制。挂载配置变化后需重建容器才能生效。
 
 启动容器、OpenCode Web 和 Multica daemon：
 
@@ -119,7 +123,7 @@ make ssh
 和 1.x 不同、影响这个仓库的几点：
 
 - **Web UI**：`opencode web` 没了，改由 `opencode serve` 同时提供 API 和 Web UI。`serve` 必须带密码，读 `OPENCODE_PASSWORD`，旧名 `OPENCODE_SERVER_PASSWORD` 仍然认；都没配时每次启动随机生成一个。Web UI 的页面本身不设防，打开后在自带的登录页里输密码；所有 API（包括 `/api/info`）都要 Basic Auth（用户名固定 `opencode`），原来的 `/global/health` 也不存在了，所以 compose 健康检查带着 `.env` 里的密码打 `/api/info`，k8s 探针继续用 `tcpSocket`。
-- **关掉常驻后台服务**：2.x 的 `opencode run`、TUI 等命令默认连一个常驻后台服务（`opencode serve --service`，监听 `127.0.0.1:49374`），找不到就拉起一个，靠 `~/.local/state/opencode/service.json` 发现彼此。这里三个容器共享同一个 home 和同一个 `opencode.db`，这套机制会出两个问题：compose 下各容器网络隔离，A 容器注册的 `127.0.0.1` 在 B 容器里连不上，B 会另起一个并覆盖注册文件，A 的服务发现自己被替换就退出，正在跑的 Multica 任务跟着断掉；后台服务启动时还会把库里「执行中但不属于自己」的会话当成崩溃遗留接着跑，而它分不出这些会话其实正在 `opencode` 容器的 `serve` 里跑着。所以 `config/opencode-service.json` 写了 `{"disabled": true}`，挂到 `~/.config/opencode/service.json`：每次 `opencode run`/TUI 都自带一个私有子进程服务器，进程模型和 1.x 一样，也不会去接管别的会话。代价是每次 `run` 多一次服务器启动（实测约 0.4 秒），以及 `opencode service set`、`opencode pair` 这类会写这个文件的命令用不了。
+- **关掉常驻后台服务**：2.x 的 `opencode run`、TUI 等命令默认连一个常驻后台服务（`opencode serve --service`，监听 `127.0.0.1:49374`），找不到就拉起一个，靠 `~/.local/state/opencode/service.json` 发现彼此。这里三个容器共享同一个 home 和同一个 `opencode.db`，这套机制会出两个问题：compose 下各容器网络隔离，A 容器注册的 `127.0.0.1` 在 B 容器里连不上，B 会另起一个并覆盖注册文件，A 的服务发现自己被替换就退出，正在跑的 Multica 任务跟着断掉；后台服务启动时还会把库里「执行中但不属于自己」的会话当成崩溃遗留接着跑，而它分不出这些会话其实正在 `opencode` 容器的 `serve` 里跑着。所以 `config/opencode-service.json` 写了 `{"disabled": true}`，链接到 `~/.config/opencode/service.json`：每次 `opencode run`/TUI 都自带一个私有子进程服务器，进程模型和 1.x 一样，也不会去接管别的会话。代价是每次 `run` 多一次服务器启动（实测约 0.4 秒），且不能使用依赖共享后台服务的配对功能。此配置可写，但应保持后台服务禁用，避免共享 home 的服务发现冲突。
 - **会话数据**：2.x 和 1.x 共用 `~/.local/share/opencode/opencode.db`，首次启动会在后台把 1.x 的会话迁移到同一个库里的新表，旧表保留（本地 2.3G、511 个会话的库约 15 秒迁完，期间 Web UI 可用）。升级前先停容器再备份 `data/.local/share/opencode/opencode.db*`（包括 WAL 文件），回退时用得上。
 - **配置**：`config/opencode.jsonc` 仍是 1.x 写法，2.x 原样兼容（`permission` 会归一成 `permissions`，`small_model` 变成内置 `title` agent 的模型，`disabled_providers` 变成 policy）。
 - **Multica**：当前固定的 Multica 0.6.1 会按 `opencode --version` 识别 2.x 并切换参数（`--dir`、`--variant` 在 2.x 里被移除）。但 2.x 只能从任务工作目录里的 `opencode.json` 读 MCP 配置，Multica 不愿把凭据写进 agent 可能 `git add` 的目录，所以**带 MCP server 的任务会被直接拒绝**（报错里会写明原因）；这类 agent 要么去掉 MCP，要么换成别的 runtime。
@@ -164,12 +168,13 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 只有单一环境，不做 stg/prod 分层；所有部署配置都在 `deploy/`，入口是 `deploy/kustomization.yaml`。
 - 存储：`workspace-pvc`（15Gi）、`user-data-pvc`（20Gi，整个挂成 `/home/ubuntu`，包含运行时安装的工具）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。`local-path` 不支持事后扩容；工具下载和安装缓存也占用 home 卷空间，需留意容量。
 - **待办（2026-09-20 之后）**：旧的 `home-data-pvc`（8Gi）在切到整挂 home 时原封不动留着当退路，新卷跑稳几周后从 `deploy/pvc.yaml` 删掉并 `kubectl delete pvc home-data-pvc`。顺带还有一个更早遗留的 `openclaw-data-pvc` 可以一起回收。
-- 配置：`deploy/kustomization.yaml` 从 `../config/` 生成带内容哈希的 ConfigMap；配置变化触发 Pod 滚动更新。因为配置源位于部署目录之外，渲染使用 `kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone`，再将结果交给 `kubectl apply -f -`，统一封装在 Makefile 中。
-- 运行时仓库：`sync-runtime` initContainer 将公开仓库的指定提交检出到独立的 `emptyDir`，应用中只读挂载为 `/workspace/.devcontainer`，与 Compose 的仓库路径一致，不改写 `workspace-pvc` 中的数据。相同卷的 `agents/` 子目录另行只读挂载到 `~/.agents`，供工具从默认用户目录读取指令和 skills；同一卷挂载到两个不同路径是合法的。镜像不包含这些文件。CI 将 `RUNTIME_REVISION` 固定为本次提交的完整 SHA；手工部署默认使用 `main`，也可在 `deploy/kustomization.yaml` 中指定已经推送的提交。
-- 目录准备：`setup` initContainer 与本地 `scripts/setup.sh` 一样预建嵌套挂载目录，但集群新卷由 root 创建，还需将卷根和这些目录的属主设置为 `1000:1000`，否则非 root 的应用无法写入。只调整指定目录的属主，不递归改权限；这一步必须在挂载用户配置和启动应用之前完成。
-- 工具安装：`setup` 准备目录后，`sync-runtime` 获取仓库，`install-tools` 执行 `/workspace/.devcontainer/scripts/install.sh`，完成后才启动应用，无需手工执行 `make install`。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
+- 配置：工具配置直接来自持久化仓库，通过与 Compose 相同的用户软链读写，不挂载只读 ConfigMap。`runtime-config` ConfigMap 仅携带仓库提交和获取仓库前需要的引导脚本，内容哈希变化触发 Pod 更新。渲染使用 `kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone`，再交给 `kubectl apply -f -`，统一封装在 Makefile 中。
+- 运行时仓库：`sync-runtime` initContainer 将公开仓库检出到 `workspace-pvc` 中的 `/workspace/.devcontainer`，应用直接使用同一份可写仓库，无额外 runtime 卷。配置、skills、脚本和 Git 工作树随 PVC 保留，Pod 重建不会丢失在线修改。已有非仓库目录或来源不匹配的仓库不会被接管。CI 将 `RUNTIME_REVISION` 固定为本次提交的完整 SHA；手工部署默认使用 `main`，也可指定已经推送的提交。
+- 仓库更新：使用非强制 Git checkout；未提交改动与目标提交不冲突时保留，冲突或存在未被目标版本包含的本地提交时停止在 `sync-runtime`，保留工作树供人工处理，不清理或隐式 stash。旧 HEAD 会保存到 `refs/workspace/saved-heads/<完整 SHA>`，避免 detached HEAD 上的用户提交失去引用。部署前应检查生产仓库的修改并按需提交、推送；冲突后需用挂载同一 PVC 的维护 Pod 处理，再重试部署。
+- 目录准备：`setup` initContainer 预建仓库和用户配置父目录，将指定目录属主设置为 `1000:1000`，包括已有卷中由嵌套挂载创建的父目录。不递归修改文件权限，保留 SSH 私钥等敏感文件的权限。
+- 工具安装：`setup` 准备目录后，`sync-runtime` 更新仓库，`install-tools` 通过 `start.sh` 准备用户链接并执行 `scripts/install.sh`，完成后才启动应用，无需手工执行 `make install`。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装和仓库中的版本配置。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
 - 工具解析：应用通过 `mise exec` 获取真实 provider PATH，避免 Multica 把 Codex 等误启动成 mise task runner；用 `make agent-cli.smoke` 在空白目录复验。
-- 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。`entrypoint.sh` 仅从 `/etc/skel` 补齐默认用户文件；Claude 到 `~/.agents` 的软链由 `install.sh` 创建。`app` 前台运行 sshd，跟 OpenCode、Multica 隔离。
+- 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。镜像的 `entrypoint.sh` 从 `/etc/skel` 补齐默认用户文件，运行时的 `start.sh` 准备配置与指令链接，再执行应用命令；修改链接逻辑不需要重建镜像。`app` 前台运行 sshd，跟 OpenCode、Multica 隔离。
 - 鉴权：`opencode serve` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`：Web UI 在自带登录页选 Use password 输入，API 客户端走 HTTP Basic Auth（用户名固定为 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
 - Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。device name 不再单独设置——Pod 固定了 `hostname: devcontainer-cloud`（同 UTS namespace，opencode/multica/app 都生效），`MULTICA_DAEMON_DEVICE_NAME` 未配置时 daemon 会读容器 hostname 当默认值，跟着显示 `devcontainer-cloud`。
 - Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode`、`multica` 和 `app` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
@@ -205,4 +210,4 @@ Kubernetes Pod 内分别运行 `opencode`、`multica` 和 `app` 容器；Multica
 - `.env`
 - `data/*`
 
-凭证、历史记录、运行时安装的工具和缓存放在 `./data`，整个目录挂载为容器里的 `/home/ubuntu`。可提交的工具配置放在 `./config`，用户指令和 skills 放在 `./agents`，两者都以嵌套挂载覆盖 `./data` 中的对应路径。不要把 token、登录态或私钥放进 `agents/`。
+凭证、历史记录、运行时安装的工具和缓存放在 `./data`，整个目录挂载为容器里的 `/home/ubuntu`。可提交的工具配置放在 `./config`，用户指令和 skills 放在 `./agents`，用户默认路径通过软链关联到仓库。不要把 token、登录态或私钥放进 `config/`、`agents/` 或其他 Git 跟踪文件。

@@ -47,53 +47,46 @@ spec:
       initContainers:
       - name: setup
         image: busybox:1.36
-        # 与本地 scripts/setup.sh 一样预建嵌套挂载目录；集群中的卷由 root
+        # 与本地 scripts/setup.sh 一样准备持久化目录；集群中的卷由 root
         # 创建，还需将卷根和这些目录交给镜像内的 ubuntu（1000:1000）。
-        # 除了卷根目录，还要预建 config-data 那几条 subPath 挂载的父目录：
-        # kubelet 会以 root 补出缺失的挂载点父目录，而它比镜像 ENTRYPOINT 的
-        # entrypoint.sh 更早，所以 /etc/skel 兜不住这一步——空卷
-        # 首启时 .claude/.codex/.config/opencode 会变成 root 所有，容器里的
-        # ubuntu 再也写不进自己的配置目录。运行时仓库使用独立的 Pod 共享卷。
+        # 配置父目录也处理属主，以兼容已有卷中由旧嵌套挂载创建的目录。
         command:
         - sh
         - -c
         - |
-          mkdir -p /mnt/user-data/.claude \
+          mkdir -p /mnt/workspace/.devcontainer \
+                   /mnt/user-data/.claude \
                    /mnt/user-data/.codex \
                    /mnt/user-data/.config/mise \
-                   /mnt/user-data/.config/opencode \
-                   /mnt/user-data/.agents
-          chown 1000:1000 /mnt/workspace /mnt/user-data \
+                   /mnt/user-data/.config/opencode
+          chown 1000:1000 /mnt/workspace /mnt/workspace/.devcontainer /mnt/user-data \
             /mnt/user-data/.claude /mnt/user-data/.codex \
-            /mnt/user-data/.config /mnt/user-data/.config/mise /mnt/user-data/.config/opencode \
-            /mnt/user-data/.agents /mnt/runtime
+            /mnt/user-data/.config /mnt/user-data/.config/mise /mnt/user-data/.config/opencode
         volumeMounts:
         - name: workspace
           mountPath: /mnt/workspace
         - name: user-data
           mountPath: /mnt/user-data
-        - name: runtime
-          mountPath: /mnt/runtime
-      # 从指定提交获取脚本与 skills，不将运行时仓库打进基础镜像。
+      # 从指定提交安全更新持久化仓库；在线修改保留，冲突时停止部署。
       - name: sync-runtime
         image: songhuangcn/devcontainer
         imagePullPolicy: Always
-        envFrom:
-        - configMapRef:
-            name: runtime-config
+        env:
+        - name: RUNTIME_REVISION
+          valueFrom:
+            configMapKeyRef:
+              name: runtime-config
+              key: RUNTIME_REVISION
         args:
         - bash
-        - -eu
-        - -o
-        - pipefail
-        - -c
-        - |
-          git init -q /workspace/.devcontainer
-          git -C /workspace/.devcontainer fetch --depth=1 https://github.com/songhuangcn/devcontainer.git "${RUNTIME_REVISION}"
-          git -C /workspace/.devcontainer checkout --detach FETCH_HEAD
+        - /etc/workspace/bootstrap/sync-runtime.sh
         volumeMounts:
-        - name: runtime
-          mountPath: /workspace/.devcontainer
+        - name: workspace
+          mountPath: /workspace
+        # ConfigMap 仅提供引导脚本，不作为工具的运行时配置。
+        - name: runtime-bootstrap
+          mountPath: /etc/workspace/bootstrap
+          readOnly: true
       # 工具安装到持久化 home，完成后才启动依赖这些 CLI 的应用容器。
       - <<: &app-base
           image: songhuangcn/devcontainer
@@ -106,43 +99,11 @@ spec:
           volumeMounts:
           - name: workspace
             mountPath: /workspace
-          # 整挂 home。必须排在下面几条嵌套挂载之前：kubelet 按声明顺序
-          # 挂载，先挂子路径的话会被随后挂上的 /home/ubuntu 整个盖住。
+          # 用户配置和 .agents 链接到持久化工作区，不使用只读 ConfigMap 或单文件挂载。
           - name: user-data
             mountPath: /home/ubuntu
-          - name: runtime
-            # 与 Compose 的仓库路径一致；独立 emptyDir 不改写 workspace PVC。
-            # 必须在 /workspace 父挂载之后，避免被覆盖。
-            mountPath: /workspace/.devcontainer
-            readOnly: true
-          # 同一卷允许挂到不同路径；这里只映射 agents 子目录到用户默认位置，
-          # 与本地 Compose 一样覆盖持久化 home 中的用户指令和 skills。
-          - name: runtime
-            mountPath: /home/ubuntu/.agents
-            subPath: agents
-            readOnly: true
-          # 可提交的工具配置由 deploy/kustomization.yaml 从 config/ 生成。
-          - name: config-data
-            mountPath: /home/ubuntu/.gitconfig
-            subPath: .gitconfig
-          - name: config-data
-            mountPath: /home/ubuntu/.claude/settings.json
-            subPath: claude-settings.json
-          - name: config-data
-            mountPath: /home/ubuntu/.codex/config.toml
-            subPath: codex-config.toml
-          - name: config-data
-            mountPath: /home/ubuntu/.config/mise/config.toml
-            subPath: mise.toml
-          - name: config-data
-            mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
-            subPath: opencode.jsonc
-          # 关掉 OpenCode 2.x 的常驻后台服务，原因见 README「OpenCode」一节。
-          - name: config-data
-            mountPath: /home/ubuntu/.config/opencode/service.json
-            subPath: opencode-service.json
         name: install-tools
-        args: ["bash", "/workspace/.devcontainer/scripts/install.sh"]
+        args: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "/workspace/.devcontainer/scripts/install.sh"]
         resources:
           requests:
             memory: "512Mi"
@@ -156,7 +117,7 @@ spec:
         name: opencode
         # 不要加 command：它会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
         # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。
-        args: ["bash", "-lc", "exec mise exec -- opencode serve --hostname 0.0.0.0 --port 4096"]
+        args: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "-lc", "exec mise exec -- opencode serve --hostname 0.0.0.0 --port 4096"]
         ports:
         - containerPort: 4096
           name: opencode
@@ -186,7 +147,7 @@ spec:
       - <<: *app-base
         name: multica
         # 同上，不要加 command。
-        args: ["bash", "-lc", "exec mise exec -- bash /workspace/.devcontainer/scripts/start-multica.sh"]
+        args: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "-lc", "exec mise exec -- bash /workspace/.devcontainer/scripts/start-multica.sh"]
         env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -213,7 +174,7 @@ spec:
         # 作为前台进程，提供一个可以从集群外 SSH 进来的共享 home/workspace 入口
         # （host key 持久化在 user-data-pvc，见 scripts/start-sshd.sh）。
         # 不要加 command：会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
-        args: ["bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
+        args: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
         ports:
         - containerPort: 22
           name: ssh
@@ -257,11 +218,9 @@ spec:
       - name: user-data
         persistentVolumeClaim:
           claimName: user-data-pvc
-      - name: config-data
+      - name: runtime-bootstrap
         configMap:
-          name: config-data
-      - name: runtime
-        emptyDir: {}
+          name: runtime-config
       - name: docker-data
         persistentVolumeClaim:
           claimName: docker-data-pvc

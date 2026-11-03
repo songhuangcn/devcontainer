@@ -21,20 +21,7 @@ x-app-base: &app-base
       - ..:/workspace
       # 整挂用户 home，mise 和工具链在启动后装到卷中，由所有应用容器共享。
       - ./data:/home/ubuntu
-      # 可提交的用户指令和 skills 覆盖持久化数据中的同名目录。
-      - ./agents:/home/ubuntu/.agents
-      # 双向可写：容器内调整版本也会写回仓库配置，无需重新构建镜像。
-      - ./config/mise.toml:/home/ubuntu/.config/mise/config.toml
-      # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
-      # 这几条是 /home/ubuntu 的嵌套挂载，父目录必须已存在于 ./data，否则由
-      # Docker daemon 以 root 创建，容器内的 ubuntu 用户就写不进去（`make setup`）。
-      - ./config/.gitconfig:/home/ubuntu/.gitconfig
-      - ./config/claude-settings.json:/home/ubuntu/.claude/settings.json
-      - ./config/codex-config.toml:/home/ubuntu/.codex/config.toml
-      - ./config/opencode.jsonc:/home/ubuntu/.config/opencode/opencode.jsonc
-      # 关掉 OpenCode 2.x 的常驻后台服务，`opencode run`/TUI 改为各自带一个私有
-      # 子进程服务器（同 1.x 的进程模型）。原因见 README「OpenCode」一节。
-      - ./config/opencode-service.json:/home/ubuntu/.config/opencode/service.json
+      # start.sh 将用户配置和 .agents 链接到工作区中的可写仓库，修改双向同步。
 
 services:
   # 默认的通用工作容器：跟 opencode 服务隔离开，不带 opencode 专属的端口/健康
@@ -42,13 +29,13 @@ services:
   # home/workspace 入口（host key 持久化在 ./data，见 scripts/start-sshd.sh）。
   app:
     <<: *app-base
-    command: ["bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
+    command: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
     ports:
       - "${SSH_PORT:-2222}:22"
   opencode:
     <<: *app-base
     # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。
-    command: ["bash", "-lc", "exec mise exec -- opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT:-4096}"]
+    command: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "-lc", "exec mise exec -- opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT:-4096}"]
     ports:
       - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
     healthcheck:
@@ -66,6 +53,8 @@ services:
       # daemon ID 是服务端 runtime 的去重键；复用原 ID 可保留已有 agent 绑定。
       MULTICA_DAEMON_ID: ${MULTICA_DAEMON_ID:-019fffb2-a6d0-7045-8ff5-9b73fe675dd1}
     command:
+      - bash
+      - /workspace/.devcontainer/scripts/start.sh
       - bash
       - -lc
       - exec mise exec -- bash /workspace/.devcontainer/scripts/start-multica.sh

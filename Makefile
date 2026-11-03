@@ -41,20 +41,20 @@ install: dev ## 在已启动容器中安装/更新用户工具，安装脚本无
 
 .PHONY: test
 test: ## 在主镜像中验证入口和安装脚本（不下载工具、不接触真实 data）
-	tar -cf - scripts config/mise.toml | \
+	tar -cf - scripts config agents | \
 		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
 		-c 'root=$$(mktemp -d); tar -xf - -C "$$root"; bash "$$root/scripts/test-runtime.sh"'
 
 .PHONY: install.test
 install.test: ## 在隔离容器中验证真实安装；脚本和配置通过 stdin 提供，不进入镜像
-	tar -cf - scripts config/mise.toml agents | \
+	tar -cf - scripts config agents | \
 		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
 		-eu -o pipefail -c 'root=$$(mktemp -d); tar -xf - -C "$$root"; \
-		mkdir -p "$$HOME/.config/mise"; cp "$$root/config/mise.toml" "$$HOME/.config/mise/config.toml"; \
-		cp -a "$$root/agents" "$$HOME/.agents"; bash "$$root/scripts/entrypoint.sh"; \
+		bash "$$root/scripts/entrypoint.sh"; \
 		bash "$$root/scripts/install.sh"; export PATH="$$HOME/.local/bin:$$PATH"; \
 		cd /tmp; mise exec -- docker compose version; \
 		mise exec -- python -c "import defusedxml, jsonschema, numpy, pypdf, pymupdf, yaml, requests, ruamel.yaml, urllib3"; \
+		mise settings set jobs 2; grep -q "jobs = 2" "$$root/config/mise.toml"; \
 		test -r "$$HOME/.claude/CLAUDE.md"; test -d "$$HOME/.claude/skills"'
 
 .PHONY: run

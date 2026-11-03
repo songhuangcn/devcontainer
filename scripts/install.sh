@@ -11,6 +11,8 @@ mkdir -p "${HOME}/.cache" "${HOME}/.local/bin" \
 exec 9>"${HOME}/.cache/workspace-install.lock"
 flock 9
 
+bash "${SCRIPT_DIR}/setup-user.sh"
+
 if [ ! -x "${HOME}/.local/bin/mise" ]; then
   curl -fsSL https://mise.run | sh
 fi
@@ -49,21 +51,5 @@ curl -fsSL --retry 3 "https://raw.githubusercontent.com/autoteam-ai/autoteam/${A
 printf '%s  autoteam\n' "${AUTOTEAM_LAUNCHER_SHA256}" | sha256sum --check -
 install -m 755 autoteam "${HOME}/.local/bin/autoteam"
 
-link_agent_resource() {
-  local source="$1" target="$2"
-  local backup="${target}.before-agents-link"
-  if [ -e "${target}" ] && [ ! -L "${target}" ]; then
-    if [ -e "${backup}" ] || [ -L "${backup}" ]; then
-      printf 'Cannot replace %s: backup already exists at %s\n' "${target}" "${backup}" >&2
-      return 1
-    fi
-    mv -- "${target}" "${backup}"
-    printf 'Preserved existing %s at %s\n' "${target}" "${backup}"
-  fi
-  ln -sfnT -- "${source}" "${target}"
-}
-
-link_agent_resource ../.agents/AGENTS.md "${HOME}/.claude/CLAUDE.md"
-link_agent_resource ../.agents/skills "${HOME}/.claude/skills"
 multica version
 mise exec -- bash "${SCRIPT_DIR}/smoke-agent-cli-launchers.sh"
