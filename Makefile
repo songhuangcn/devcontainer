@@ -23,7 +23,7 @@ check: ## 脚本/Dockerfile 检查、Compose/Kustomize 校验、运行时脚本�
 	$(MAKE) deploy.config > /dev/null
 
 .PHONY: dev
-dev: ## 一条命令起环境，可重复执行：准备 .env 和数据目录，启动 app 与 Docker-in-Docker
+dev: ## 准备配置和数据目录，启动 SSH 工作容器
 	bash scripts/setup.sh
 	$(COMPOSE) up -d app
 
@@ -36,14 +36,26 @@ setup:
 	bash scripts/setup.sh
 
 .PHONY: install
-install: setup ## 独立安装/更新 mise、工具链及 Python 依赖到持久化 home
-	$(COMPOSE) run --rm --no-deps app install.sh
+install: dev ## 在已启动容器中安装/更新用户工具，安装脚本无需重建镜像
+	$(COMPOSE) exec -T app bash /opt/workspace/scripts/install.sh
 
 .PHONY: test
 test: ## 在主镜像中验证入口和安装脚本（不下载工具、不接触真实 data）
-	tar -cf - scripts/entrypoint.sh scripts/install.sh scripts/test-runtime.sh | \
+	tar -cf - scripts config/mise.toml | \
 		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
 		-c 'root=$$(mktemp -d); tar -xf - -C "$$root"; bash "$$root/scripts/test-runtime.sh"'
+
+.PHONY: install.test
+install.test: ## 在隔离容器中验证真实安装；脚本和配置通过 stdin 提供，不进入镜像
+	tar -cf - scripts config/mise.toml agents | \
+		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
+		-eu -o pipefail -c 'root=$$(mktemp -d); tar -xf - -C "$$root"; \
+		mkdir -p "$$HOME/.config/mise"; cp "$$root/config/mise.toml" "$$HOME/.config/mise/config.toml"; \
+		cp -a "$$root/agents" "$$HOME/.agents"; bash "$$root/scripts/entrypoint.sh"; \
+		bash "$$root/scripts/install.sh"; export PATH="$$HOME/.local/bin:$$PATH"; \
+		cd /tmp; mise exec -- docker compose version; \
+		mise exec -- python -c "import defusedxml, jsonschema, numpy, pypdf, pymupdf, yaml, requests, ruamel.yaml, urllib3"; \
+		test -r "$$HOME/.claude/CLAUDE.md"; test -d "$$HOME/.claude/skills"'
 
 .PHONY: run
 run:
@@ -67,7 +79,7 @@ logs:
 
 .PHONY: multica.status
 multica.status:
-	$(COMPOSE) exec multica multica daemon status --output json
+	$(COMPOSE) exec multica /home/ubuntu/.local/bin/multica daemon status --output json
 
 .PHONY: multica.logs
 multica.logs:
@@ -83,11 +95,11 @@ multica.stop:
 
 .PHONY: multica.smoke
 multica.smoke:
-	$(COMPOSE) run --rm --no-deps multica multica version
+	$(COMPOSE) exec -T app /home/ubuntu/.local/bin/multica version
 
 .PHONY: agent-cli.smoke
 agent-cli.smoke:
-	$(COMPOSE) run --rm --no-deps multica smoke-agent-cli-launchers
+	$(COMPOSE) exec -T app bash -lc 'exec mise exec -- bash /opt/workspace/scripts/smoke-agent-cli-launchers.sh'
 
 .PHONY: restart
 restart: stop start
@@ -98,7 +110,7 @@ stop:
 
 .PHONY: bash
 bash:
-	$(COMPOSE) exec app bash
+	$(COMPOSE) exec app bash -lc 'exec mise exec -- bash'
 
 .PHONY: ssh
 ssh:
@@ -157,7 +169,7 @@ deploy.logs: # 查看 app 容器日志
 
 .PHONY: deploy.bash
 deploy.bash: # 进入集群里的 app 容器
-	kubectl exec -it -n devcontainer deployment/app -c app -- bash
+	kubectl exec -it -n devcontainer deployment/app -c app -- bash -lc 'exec mise exec -- bash'
 
 .PHONY: deploy.ssh
 deploy.ssh: # SSH 进云端实例
@@ -165,7 +177,7 @@ deploy.ssh: # SSH 进云端实例
 
 .PHONY: deploy.multica-status
 deploy.multica-status:
-	kubectl exec -n devcontainer deployment/app -c multica -- multica daemon status --output json
+	kubectl exec -n devcontainer deployment/app -c multica -- /home/ubuntu/.local/bin/multica daemon status --output json
 
 .PHONY: deploy.multica-logs
 deploy.multica-logs:

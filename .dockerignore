@@ -1,6 +1,4 @@
-data
-config
-.git
-.env
-.DS_Store
-!**/.keep
+*
+!Dockerfile
+!scripts/
+!scripts/entrypoint.sh

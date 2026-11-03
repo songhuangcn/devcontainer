@@ -5,11 +5,11 @@
 ## 内容
 
 - `docker-compose.yml`：用共享 base 配置分别启动工作容器 `app`（SSH）、`opencode`、`multica`，并提供 Docker-in-Docker service `docker`。
-- `Dockerfile`：只构建一个主镜像，包含系统开发工具、Multica 和论文输出工具链。
+- `Dockerfile`：只构建一个基础镜像，包含系统开发依赖、字体和论文输出工具链，仅复制 `entrypoint.sh`。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口（指向 `app` service），不再使用 devcontainer features。
 - `scripts/setup.sh`：创建 `.env`，并预建 `./data` 下嵌套挂载所需的目录。
 - `scripts/entrypoint.sh`：从 `/etc/skel` 补齐缺失的默认用户文件，然后执行容器命令。
-- `scripts/install.sh`：容器启动后安装 mise、`mise.toml` 中的工具及 Python 依赖。
+- `scripts/install.sh`：容器启动后安装 mise、`config/mise.toml` 中的工具、Python 依赖、Multica 和 Autoteam 启动器。
 - `config/`、`agents/`：纳入版本控制的工具配置、用户指令和 skills。
 - `deploy/`：完整的 Kubernetes 部署配置，包括唯一的 `kustomization.yaml`。
 
@@ -21,7 +21,7 @@ CI 只发布主镜像：
 
 `songhuangcn/devcontainer` 虽然保留原名称，但现在是纯 Docker 镜像，不依赖 devcontainer feature，包含 LaTeX/PDF、CJK 字体和 PDF 检查工具；Pandoc 等 mise 工具在启动后安装。
 
-mise、OpenCode、Claude、Codex、Node、Python、GitHub CLI、Docker CLI、Compose plugin 等不在构建时安装，由 `make install` 安装到持久化 home；更新工具清单后重新执行即可，不必把下载依赖放回镜像构建过程。
+mise、OpenCode、Claude、Codex、Node、Python、GitHub CLI、Docker CLI、Compose plugin、Multica、Autoteam 等都由 `make install` 安装到用户 home。配置、安装脚本和 skills 不进入镜像，修改它们无需重新构建基础镜像。
 
 ## 前置依赖
 
@@ -44,17 +44,19 @@ make install
 make start
 ```
 
-`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data/.agents`、`./data/.claude`、`./data/.codex`、`./data/.config/opencode`，避免 Docker daemon 以 root 身份创建嵌套挂载需要的目录。启动前填写 `.env` 中的 `OPENCODE_SERVER_PASSWORD` 和 `MULTICA_TOKEN`。
+`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data/.agents`、`./data/.claude`、`./data/.codex`、`./data/.config/mise`、`./data/.config/opencode`，避免 Docker daemon 以 root 身份创建嵌套挂载需要的目录。启动服务前填写 `.env` 中的 `OPENCODE_SERVER_PASSWORD` 和 `MULTICA_TOKEN`。
 
-`make install` 用主镜像启动一个临时容器执行 `install.sh`，不需要先启动 OpenCode 或 Multica。脚本会串行安装 mise、工具和 Python 依赖，并建立 provider 直连入口及 Claude 的用户指令、skills 软链。它可以重复执行；生产环境在 initContainer 中执行同一脚本。
+`make install` 先启动 `app`，再执行 `docker compose exec -T app bash /opt/workspace/scripts/install.sh`。`scripts/` 是只读挂载，修改脚本后可直接重跑；不需要先启动 OpenCode 或 Multica。脚本串行安装用户工具，并建立 Compose plugin 入口及 Claude 的用户指令、skills 软链。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
 
 `docker-compose.yml` 把 `./data` 整挂到 `/home/ubuntu`，再用 `./config` 的文件和 `./agents` 目录覆盖对应路径。默认用户文件直接从 `/etc/skel` 补齐，只补缺失项，已有 `.bashrc`、`.profile` 永远不会被覆盖。`install.sh` 创建 `~/.claude/CLAUDE.md -> ../.agents/AGENTS.md` 和 `~/.claude/skills -> ../.agents/skills`；如目标原先是实体文件或目录，会先保留为同名的 `.before-agents-link`。
 
-mise 位于 `~/.local/bin/mise`，工具位于 `~/.local/share/mise`，provider 直连入口位于 `~/.local/share/agent-bin`，Compose plugin 位于 `~/.docker/cli-plugins/docker-compose`。这些路径随 `data` 持久化并在应用容器间共享。login shell 会优先查找 `~/.local/bin` 中自行安装的同名命令（Ubuntu `.profile` 的默认行为）。
+mise、Multica 和 Autoteam 启动器安装在 `~/.local/bin`；mise 使用默认的用户数据、缓存、状态目录，不设置 `MISE_*` 环境变量或专用 provider 目录。Compose plugin 位于 `~/.docker/cli-plugins/docker-compose`。这些内容随 home 持久化，由用户自行管理。
 
-只启动 SSH 工作容器时可用 `make dev`；需要工具时再执行 `make install`。本地 `mise.toml` 只读挂到 `/etc/mise/config.toml`，修改工具版本后直接 `make install` 即可。常规重启无需重新安装；`make update` 会依次拉取镜像、停止服务、安装工具并重新启动。
+OpenCode 和 Multica 服务通过 login shell 执行 `mise exec -- …`，使用真实工具路径而不是 mise shim；`make bash` 也会进入 mise 工具环境。普通 SSH shell 可运行 `mise exec -- <命令>`，或自行在 `~/.bashrc` 配置 `eval "$(mise activate bash)"`；安装脚本不会修改用户 shell 配置。
 
-本地修改 `agents/skills` 会直接对所有应用容器生效；提交后由 CI 构建并部署主镜像，生产 Pod 会从当前镜像初始化共享 agents 卷，无需手工同步，也不会保留已从仓库删除的 skill。已有环境从 `data/.agents` 切换到此布局后，需要重建容器以启用新挂载。
+只启动 SSH 工作容器时可用 `make dev`；需要工具时再执行 `make install`。`config/mise.toml` 与其他配置一样，挂载到用户默认路径 `~/.config/mise/config.toml`；修改版本后直接 `make install` 即可。常规重启无需重新安装；`make update` 会依次拉取镜像、停止服务、安装工具并重新启动。
+
+本地修改 `agents/skills` 会直接对所有应用容器生效。提交并推送后，CI 会部署对应的仓库提交，生产 Pod 从仓库获取脚本和 skills，无需手工同步，也不会保留已删除的 skill。挂载配置变化后需重建容器才能生效。
 
 启动容器、OpenCode Web 和 Multica daemon：
 
@@ -112,7 +114,7 @@ make ssh
 
 ## OpenCode
 
-`install.sh` 安装的是 OpenCode 2.x。2.x 只发布到 npm 的 `@opencode/cli`（GitHub 上只有 tag 没有 release），所以 `mise.toml` 里写的是 `"npm:@opencode/cli"`，不是 mise 内置的 `opencode`（后者走 GitHub release，只能装到 1.x）。这个包靠 postinstall 从平台包里拷出真正的二进制，而 mise 默认不跑依赖的安装脚本，所以要用 `allow_builds` 放行，否则装出来的 `opencode` 一运行就报 postinstall 没执行。
+`install.sh` 安装的是 OpenCode 2.x。2.x 只发布到 npm 的 `@opencode/cli`（GitHub 上只有 tag 没有 release），所以 `config/mise.toml` 里写的是 `"npm:@opencode/cli"`，不是 mise 内置的 `opencode`（后者走 GitHub release，只能装到 1.x）。这个包靠 postinstall 从平台包里拷出真正的二进制，而 mise 默认不跑依赖的安装脚本，所以要用 `allow_builds` 放行，否则装出来的 `opencode` 一运行就报 postinstall 没执行。
 
 和 1.x 不同、影响这个仓库的几点：
 
@@ -124,7 +126,7 @@ make ssh
 
 ## Multica daemon
 
-镜像从 Multica 官方 release 安装 Dockerfile 中固定的 CLI 版本（当前为 0.6.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
+`install.sh` 从 Multica 官方 release 安装固定 CLI 版本（当前为 0.6.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
 
 ```bash
 make setup
@@ -163,9 +165,9 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 存储：`workspace-pvc`（15Gi）、`user-data-pvc`（20Gi，整个挂成 `/home/ubuntu`，包含运行时安装的工具）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。`local-path` 不支持事后扩容；工具下载和安装缓存也占用 home 卷空间，需留意容量。
 - **待办（2026-09-20 之后）**：旧的 `home-data-pvc`（8Gi）在切到整挂 home 时原封不动留着当退路，新卷跑稳几周后从 `deploy/pvc.yaml` 删掉并 `kubectl delete pvc home-data-pvc`。顺带还有一个更早遗留的 `openclaw-data-pvc` 可以一起回收。
 - 配置：`deploy/kustomization.yaml` 从 `../config/` 生成带内容哈希的 ConfigMap；配置变化触发 Pod 滚动更新。因为配置源位于部署目录之外，渲染使用 `kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone`，再将结果交给 `kubectl apply -f -`，统一封装在 Makefile 中。
-- Skills：镜像包含版本控制的 `/opt/agents`，`install-tools` initContainer 将其复制到 Pod 独立的 `emptyDir`，应用容器以嵌套挂载覆盖 `~/.agents`。每个新 Pod 都从对应镜像重新初始化，不受 PVC 中旧 skills 的影响。
-- 工具安装：`fix-ownership` 先准备挂载点和属主，然后 `install-tools` 执行 `install.sh`，安装完成才启动应用。首次部署需要联网下载工具；后续复用 home 卷中的安装，部署等待超时为 20 分钟。失败时查看 `kubectl logs -n devcontainer deployment/app -c install-tools`。
-- 工具解析：`install.sh` 在 `~/.local/share/agent-bin` 创建直达实际 provider CLI 的链接，并置于 mise shims 之前，避免 Multica 把 Codex 等误启动成 mise task runner；可用 `smoke-agent-cli-launchers` 在空白目录复验。
+- 运行时仓库：`sync-runtime` initContainer 将公开仓库的指定提交检出到独立的 `emptyDir`，挂为 `/opt/workspace`；其中的 `agents/` 覆盖 `~/.agents`，`scripts/` 直接用于启动与安装。镜像不包含这些文件。CI 将 `RUNTIME_REVISION` 固定为本次提交的完整 SHA；手工部署默认使用 `main`，也可在 `deploy/kustomization.yaml` 中指定已经推送的提交。
+- 工具安装：`fix-ownership` 准备挂载点和属主，`sync-runtime` 获取仓库，`install-tools` 执行仓库中的 `scripts/install.sh`，完成后才启动应用。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
+- 工具解析：应用通过 `mise exec` 获取真实 provider PATH，避免 Multica 把 Codex 等误启动成 mise task runner；用 `make agent-cli.smoke` 在空白目录复验。
 - 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。`entrypoint.sh` 仅从 `/etc/skel` 补齐默认用户文件；Claude 到 `~/.agents` 的软链由 `install.sh` 创建。`app` 前台运行 sshd，跟 OpenCode、Multica 隔离。
 - 鉴权：`opencode serve` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`：Web UI 在自带登录页选 Use password 输入，API 客户端走 HTTP Basic Auth（用户名固定为 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
 - Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。device name 不再单独设置——Pod 固定了 `hostname: devcontainer-cloud`（同 UTS namespace，opencode/multica/app 都生效），`MULTICA_DAEMON_DEVICE_NAME` 未配置时 daemon 会读容器 hostname 当默认值，跟着显示 `devcontainer-cloud`。
@@ -193,7 +195,7 @@ Kubernetes Pod 内分别运行 `opencode`、`multica` 和 `app` 容器；Multica
 
 修改 `deploy/app-secret.yaml`（明文，已被 `deploy/.gitignore` 排除）后，用 `make deploy.encode` 重新生成 `deploy/app-sealed-secret.yaml`。
 
-`.github/workflows/build-devcontainer.yml` 在构建和运行时安装验证成功后自动执行 `make deploy.apply`，使用当次构建的 `commit-<short-sha>` 镜像 tag。`agents/**` 的修改也会触发此流程。所需 `KUBECONFIG` secret 仅有 `devcontainer` 命名空间权限。
+`.github/workflows/build-devcontainer.yml` 仅在 Dockerfile、构建上下文规则、entrypoint 或工作流本身变化时重建基础镜像，发布 `commit-<short-sha>` 和 `latest`。只修改配置、安装脚本或 skills 时复用已发布的基础镜像，独立更新运行时仓库提交。两种路径都会验证安装并执行 `make deploy.apply`。所需 `KUBECONFIG` secret 仅有 `devcontainer` 命名空间权限。
 
 ## 本地数据
 

@@ -29,6 +29,7 @@ prepare_persistent_files() {
     "${DATA_DIR}/.agents" \
     "${DATA_DIR}/.claude" \
     "${DATA_DIR}/.codex" \
+    "${DATA_DIR}/.config/mise" \
     "${DATA_DIR}/.config/opencode"
 
   log 'prepared nested bind-mount parent directories under ./data.'

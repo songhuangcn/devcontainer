@@ -23,7 +23,8 @@ x-app-base: &app-base
       # 可提交的用户指令和 skills 覆盖持久化数据中的同名目录。
       - ./agents:/home/ubuntu/.agents
       # 本地修改工具版本后可直接 make install，无需重新构建镜像。
-      - ./mise.toml:/etc/mise/config.toml:ro
+      - ./config/mise.toml:/home/ubuntu/.config/mise/config.toml:ro
+      - ./scripts:/opt/workspace/scripts:ro
       # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
       # 这几条是 /home/ubuntu 的嵌套挂载，父目录必须已存在于 ./data，否则由
       # Docker daemon 以 root 创建，容器内的 ubuntu 用户就写不进去（`make setup`）。
@@ -41,13 +42,13 @@ services:
   # home/workspace 入口（host key 持久化在 ./data，见 scripts/start-sshd.sh）。
   app:
     <<: *app-base
-    command: ["devcontainer-start-sshd"]
+    command: ["bash", "/opt/workspace/scripts/start-sshd.sh"]
     ports:
       - "${SSH_PORT:-2222}:22"
   opencode:
     <<: *app-base
     # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。
-    command: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "${OPENCODE_PORT:-4096}"]
+    command: ["bash", "-lc", "exec mise exec -- opencode serve --hostname 0.0.0.0 --port ${OPENCODE_PORT:-4096}"]
     ports:
       - "${OPENCODE_PORT:-4096}:${OPENCODE_PORT:-4096}"
     healthcheck:
@@ -65,15 +66,11 @@ services:
       # daemon ID 是服务端 runtime 的去重键；复用原 ID 可保留已有 agent 绑定。
       MULTICA_DAEMON_ID: ${MULTICA_DAEMON_ID:-019fffb2-a6d0-7045-8ff5-9b73fe675dd1}
     command:
-      - sh
-      - -c
-      - >-
-        if ! multica auth status >/dev/null 2>&1; then
-          multica login --token "$${MULTICA_TOKEN}";
-        fi;
-        exec multica daemon start --foreground
+      - bash
+      - -lc
+      - exec mise exec -- bash /opt/workspace/scripts/start-multica.sh
     healthcheck:
-      test: ["CMD", "multica", "daemon", "status", "--output", "json"]
+      test: ["CMD", "/home/ubuntu/.local/bin/multica", "daemon", "status", "--output", "json"]
       interval: 15s
       timeout: 5s
       retries: 3

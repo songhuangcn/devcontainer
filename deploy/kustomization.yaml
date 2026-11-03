@@ -17,6 +17,10 @@ configMapGenerator:
   - .gitconfig=../config/.gitconfig
   - claude-settings.json=../config/claude-settings.json
   - codex-config.toml=../config/codex-config.toml
+  - mise.toml=../config/mise.toml
+- name: runtime-config
+  literals:
+  - RUNTIME_REVISION=main
 images:
 - name: songhuangcn/devcontainer
   newTag: latest

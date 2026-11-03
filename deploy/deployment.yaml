@@ -51,26 +51,47 @@ spec:
         # kubelet 会以 root 补出缺失的挂载点父目录，而它比镜像 ENTRYPOINT 的
         # entrypoint.sh 更早，所以 /etc/skel 兜不住这一步——空卷
         # 首启时 .claude/.codex/.config/opencode 会变成 root 所有，容器里的
-        # ubuntu 再也写不进自己的配置目录。agents 使用独立的 Pod 共享卷。
+        # ubuntu 再也写不进自己的配置目录。运行时仓库使用独立的 Pod 共享卷。
         command:
         - sh
         - -c
         - |
           mkdir -p /mnt/user-data/.claude \
                    /mnt/user-data/.codex \
+                   /mnt/user-data/.config/mise \
                    /mnt/user-data/.config/opencode \
                    /mnt/user-data/.agents
           chown 1000:1000 /mnt/workspace /mnt/user-data \
             /mnt/user-data/.claude /mnt/user-data/.codex \
-            /mnt/user-data/.config /mnt/user-data/.config/opencode \
-            /mnt/user-data/.agents /mnt/agents
+            /mnt/user-data/.config /mnt/user-data/.config/mise /mnt/user-data/.config/opencode \
+            /mnt/user-data/.agents /mnt/runtime
         volumeMounts:
         - name: workspace
           mountPath: /mnt/workspace
         - name: user-data
           mountPath: /mnt/user-data
-        - name: agents
-          mountPath: /mnt/agents
+        - name: runtime
+          mountPath: /mnt/runtime
+      # 从指定提交获取脚本与 skills，不将运行时仓库打进基础镜像。
+      - name: sync-runtime
+        image: songhuangcn/devcontainer
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: runtime-config
+        args:
+        - bash
+        - -eu
+        - -o
+        - pipefail
+        - -c
+        - |
+          git init -q /opt/workspace
+          git -C /opt/workspace fetch --depth=1 https://github.com/songhuangcn/devcontainer.git "${RUNTIME_REVISION}"
+          git -C /opt/workspace checkout --detach FETCH_HEAD
+        volumeMounts:
+        - name: runtime
+          mountPath: /opt/workspace
       # 工具安装到持久化 home，完成后才启动依赖这些 CLI 的应用容器。
       - <<: &app-base
           image: songhuangcn/devcontainer
@@ -87,9 +108,13 @@ spec:
           # 挂载，先挂子路径的话会被随后挂上的 /home/ubuntu 整个盖住。
           - name: user-data
             mountPath: /home/ubuntu
-          # 每次重建 Pod 都从当前镜像初始化，更新/删除 skills 不残留旧文件。
-          - name: agents
+          - name: runtime
+            mountPath: /opt/workspace
+            readOnly: true
+          # 与本地 Compose 一样，从运行时仓库覆盖 home 中的 skills。
+          - name: runtime
             mountPath: /home/ubuntu/.agents
+            subPath: agents
           # 可提交的工具配置由 deploy/kustomization.yaml 从 config/ 生成。
           - name: config-data
             mountPath: /home/ubuntu/.gitconfig
@@ -101,6 +126,9 @@ spec:
             mountPath: /home/ubuntu/.codex/config.toml
             subPath: codex-config.toml
           - name: config-data
+            mountPath: /home/ubuntu/.config/mise/config.toml
+            subPath: mise.toml
+          - name: config-data
             mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
             subPath: opencode.jsonc
           # 关掉 OpenCode 2.x 的常驻后台服务，原因见 README「OpenCode」一节。
@@ -108,15 +136,7 @@ spec:
             mountPath: /home/ubuntu/.config/opencode/service.json
             subPath: opencode-service.json
         name: install-tools
-        args:
-        - bash
-        - -eu
-        - -o
-        - pipefail
-        - -c
-        - |
-          cp -a /opt/agents/. "${HOME}/.agents/"
-          exec install.sh
+        args: ["bash", "/opt/workspace/scripts/install.sh"]
         resources:
           requests:
             memory: "512Mi"
@@ -130,7 +150,7 @@ spec:
         name: opencode
         # 不要加 command：它会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
         # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。
-        args: ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]
+        args: ["bash", "-lc", "exec mise exec -- opencode serve --hostname 0.0.0.0 --port 4096"]
         ports:
         - containerPort: 4096
           name: opencode
@@ -160,14 +180,7 @@ spec:
       - <<: *app-base
         name: multica
         # 同上，不要加 command。
-        args:
-        - sh
-        - -c
-        - >-
-          if ! multica auth status >/dev/null 2>&1; then
-            multica login --token "$MULTICA_TOKEN";
-          fi;
-          exec multica daemon start --foreground
+        args: ["bash", "-lc", "exec mise exec -- bash /opt/workspace/scripts/start-multica.sh"]
         env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -176,7 +189,7 @@ spec:
           value: 019fff1d-364f-7279-83a7-d79613c153ac
         livenessProbe:
           exec:
-            command: ["multica", "daemon", "status", "--output", "json"]
+            command: ["/home/ubuntu/.local/bin/multica", "daemon", "status", "--output", "json"]
           initialDelaySeconds: 30
           periodSeconds: 30
           timeoutSeconds: 5
@@ -194,7 +207,7 @@ spec:
         # 作为前台进程，提供一个可以从集群外 SSH 进来的共享 home/workspace 入口
         # （host key 持久化在 user-data-pvc，见 scripts/start-sshd.sh）。
         # 不要加 command：会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
-        args: ["devcontainer-start-sshd"]
+        args: ["bash", "/opt/workspace/scripts/start-sshd.sh"]
         ports:
         - containerPort: 22
           name: ssh
@@ -241,7 +254,7 @@ spec:
       - name: config-data
         configMap:
           name: config-data
-      - name: agents
+      - name: runtime
         emptyDir: {}
       - name: docker-data
         persistentVolumeClaim:
