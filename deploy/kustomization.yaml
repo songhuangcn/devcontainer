@@ -8,7 +8,6 @@ resources:
 - pvc.yaml
 - deployment.yaml
 - ingress.yaml
-- service-ssh.yaml
 configMapGenerator:
 - name: runtime-config
   files:
