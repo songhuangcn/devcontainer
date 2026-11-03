@@ -22,11 +22,6 @@ check: ## 脚本/Dockerfile 检查、Compose/Kustomize 校验、运行时脚本�
 	$(MAKE) test
 	$(MAKE) deploy.config > /dev/null
 
-.PHONY: dev
-dev: ## 准备配置和数据目录，启动 SSH 工作容器
-	bash scripts/setup.sh
-	$(COMPOSE) up -d app
-
 .PHONY: deploy
 deploy: ## 等本次提交的主镜像构建与部署成功
 	bash scripts/wait-build.sh "$$(git rev-parse HEAD)"
@@ -36,12 +31,12 @@ setup:
 	bash scripts/setup.sh
 
 .PHONY: install
-install: dev ## 在已启动容器中安装/更新用户工具，安装脚本无需重建镜像
-	$(COMPOSE) exec -T app bash /workspace/.devcontainer/scripts/install.sh
+install: setup ## 用一次性容器安装/更新用户工具，无需先启动应用服务
+	$(COMPOSE) run --rm --no-deps -T opencode bash /workspace/.devcontainer/scripts/install.sh
 
 .PHONY: test
-test: ## 在主镜像中验证入口和安装脚本（不下载工具、不接触真实 data）
-	tar -cf - scripts config agents | \
+test: ## 在主镜像中验证入口、安装脚本和安装命令编排（不下载工具、不接触真实 data）
+	tar -cf - Makefile scripts config agents | \
 		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
 		-c 'root=$$(mktemp -d); tar -xf - -C "$$root"; bash "$$root/scripts/test-runtime.sh"'
 
@@ -59,11 +54,11 @@ install.test: ## 在隔离容器中验证真实安装；脚本和配置通过 st
 
 .PHONY: run
 run:
-	$(COMPOSE) up
+	$(COMPOSE) up --remove-orphans
 
 .PHONY: start
 start:
-	$(COMPOSE) up -d
+	$(COMPOSE) up -d --remove-orphans
 
 .PHONY: start-opencode
 start-opencode: restart-opencode
@@ -75,7 +70,7 @@ restart-opencode:
 
 .PHONY: logs
 logs:
-	$(COMPOSE) logs -f app
+	$(COMPOSE) logs -f opencode
 
 .PHONY: multica.status
 multica.status:
@@ -95,11 +90,11 @@ multica.stop:
 
 .PHONY: multica.smoke
 multica.smoke:
-	$(COMPOSE) exec -T app /home/ubuntu/.local/bin/multica version
+	$(COMPOSE) exec -T multica /home/ubuntu/.local/bin/multica version
 
 .PHONY: agent-cli.smoke
 agent-cli.smoke:
-	$(COMPOSE) exec -T app bash -lc 'exec mise exec -- bash /workspace/.devcontainer/scripts/smoke-agent-cli-launchers.sh'
+	$(COMPOSE) exec -T multica bash -lc 'exec mise exec -- bash /workspace/.devcontainer/scripts/smoke-agent-cli-launchers.sh'
 
 .PHONY: restart
 restart: stop start
@@ -110,11 +105,7 @@ stop:
 
 .PHONY: bash
 bash:
-	$(COMPOSE) exec app bash -lc 'exec mise exec -- bash'
-
-.PHONY: ssh
-ssh:
-	ssh -p 2222 ubuntu@localhost
+	$(COMPOSE) exec opencode bash -lc 'exec mise exec -- bash'
 
 .PHONY: update
 update:
@@ -129,15 +120,15 @@ pull:
 
 .PHONY: build
 build:
-	$(COMPOSE) build app
+	$(COMPOSE) build opencode
 
 .PHONY: down
 down:
-	$(COMPOSE) down
+	$(COMPOSE) down --remove-orphans
 
 .PHONY: destroy
 destroy:
-	$(COMPOSE) down --volumes --rmi all
+	$(COMPOSE) down --remove-orphans --volumes --rmi all
 
 # ==== k3s 部署（deploy/ 目录，参考 yangcheng-team/eastar-price 的 deploy 目录风格） ====
 # 需要本地 kubectl 已经指向目标集群（oracle-arm1），且已安装 kubeseal。
@@ -157,6 +148,8 @@ deploy.config: # 本地预览 kustomize 渲染结果，不实际 apply
 .PHONY: deploy.apply
 deploy.apply: # 应用 deploy/ 到集群
 	kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone | kubectl apply -f -
+	# apply 不会删除已移出清单的资源，显式关闭遗留的 SSH 入口。
+	kubectl delete service app-ssh -n devcontainer --ignore-not-found
 	kubectl rollout status deployment/app -n devcontainer --timeout=20m
 
 .PHONY: deploy.status
@@ -164,16 +157,12 @@ deploy.status: # 查看当前部署状态
 	kubectl get pods,svc,ingress,pvc -n devcontainer
 
 .PHONY: deploy.logs
-deploy.logs: # 查看 app 容器日志
-	kubectl logs -n devcontainer -l app=devcontainer -c app -f
+deploy.logs: # 查看 opencode 容器日志
+	kubectl logs -n devcontainer -l app=devcontainer -c opencode -f
 
 .PHONY: deploy.bash
-deploy.bash: # 进入集群里的 app 容器
-	kubectl exec -it -n devcontainer deployment/app -c app -- bash -lc 'exec mise exec -- bash'
-
-.PHONY: deploy.ssh
-deploy.ssh: # SSH 进云端实例
-	ssh -p 2222 ubuntu@ai.hdgcs.com
+deploy.bash: # 进入集群里的 opencode 容器
+	kubectl exec -it -n devcontainer deployment/app -c opencode -- bash -lc 'exec mise exec -- bash'
 
 .PHONY: deploy.multica-status
 deploy.multica-status:

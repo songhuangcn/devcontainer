@@ -17,7 +17,7 @@ test -d "${ROOT_DIR}/agents/skills"
 
 mkdir -p "${HOME}/.cache" "${HOME}/.claude" "${HOME}/.codex" \
   "${HOME}/.config/mise" "${HOME}/.config/opencode"
-# app、OpenCode、Multica 会同时启动，共享 home 的链接迁移必须串行。
+# OpenCode、Multica 会同时启动，共享 home 的链接迁移必须串行。
 exec 9>"${HOME}/.cache/workspace-config.lock"
 flock 9
 

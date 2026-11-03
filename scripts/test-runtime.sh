@@ -27,6 +27,28 @@ test "$(cat "${setup_root}/.env")" = 'TEST_SETTING=custom'
 test "$(cat "${setup_root}/data/existing")" = 'user data'
 test "$(stat -c %a "${setup_root}/data")" = 700
 
+# 安装命令用一次性容器引导工具，不依赖已启动的服务，并向上传递失败。
+cp "${SCRIPT_DIR}/../Makefile" "${setup_root}/Makefile"
+make_bin="${root}/make-bin"
+mkdir -p "${make_bin}"
+export TEST_COMPOSE_LOG="${root}/compose.log"
+cat > "${make_bin}/docker" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "${TEST_COMPOSE_LOG}"
+exit "${TEST_COMPOSE_EXIT:-0}"
+SH
+chmod +x "${make_bin}/docker"
+PATH="${make_bin}:${PATH}" make --no-print-directory -C "${setup_root}" install
+test "$(cat "${TEST_COMPOSE_LOG}")" = \
+  'compose -f docker-compose.yml run --rm --no-deps -T opencode bash /workspace/.devcontainer/scripts/install.sh'
+test "$(cat "${setup_root}/.env")" = 'TEST_SETTING=custom'
+test "$(cat "${setup_root}/data/existing")" = 'user data'
+if PATH="${make_bin}:${PATH}" TEST_COMPOSE_EXIT=23 make --no-print-directory -C "${setup_root}" install; then
+  printf 'Expected container installation failure to fail make install\n' >&2
+  exit 1
+fi
+
 # 空 home 从 /etc/skel 补齐；已有用户文件不覆盖；参数和退出码原样传递。
 bash "${SCRIPT_DIR}/entrypoint.sh"
 cmp /etc/skel/.bashrc "${HOME}/.bashrc"

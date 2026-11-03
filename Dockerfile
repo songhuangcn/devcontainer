@@ -40,7 +40,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-writer \
     libssl-dev \
     openssh-client \
-    openssh-server \
     locales \
     poppler-utils \
     qpdf \
@@ -73,12 +72,6 @@ RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
     && fc-cache -f
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-# sshd 支持：删掉包安装时烘进镜像层的默认 host key（同一镜像 tag 的所有容器会
-# 共享同一份，且每次重新构建都会换一批——host key 只从持久卷里生成/复用，见
-# scripts/start-sshd.sh）。给 sshd 加 setuid 位，让非 root 的 ubuntu 用户能直接
-# exec 起它拿到 root，不用 sudo 包一层常驻成为事实上的 PID 1。
-RUN rm -f /etc/ssh/ssh_host_* && chmod u+s /usr/sbin/sshd
 
 USER ubuntu
 

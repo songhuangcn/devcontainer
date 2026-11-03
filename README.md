@@ -4,9 +4,9 @@
 
 ## 内容
 
-- `docker-compose.yml`：用共享 base 配置分别启动工作容器 `app`（SSH）、`opencode`、`multica`，并提供 Docker-in-Docker service `docker`。
+- `docker-compose.yml`：用共享 base 配置分别启动 `opencode`、`multica`，并提供 Docker-in-Docker service `docker`。
 - `Dockerfile`：只构建一个基础镜像，包含系统开发依赖、字体和论文输出工具链，仅复制 `entrypoint.sh`。
-- `devcontainer.json`：仅作为 VS Code 快速打开入口（指向 `app` service），不再使用 devcontainer features。
+- `devcontainer.json`：仅作为 VS Code 快速打开入口（指向 `opencode` service），不再使用 devcontainer features。
 - `scripts/setup.sh`：创建 `.env` 和持久化 home 目录 `./data`。
 - `scripts/entrypoint.sh`：从 `/etc/skel` 补齐缺失的默认用户文件，然后执行容器命令。
 - `scripts/start.sh`、`scripts/setup-user.sh`：应用启动前，将用户配置、指令和 skills 链接到可写仓库。
@@ -48,7 +48,7 @@ make start
 
 `make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data`，避免 Docker daemon 以 root 身份创建 home 卷根。启动服务前填写 `.env` 中的 `OPENCODE_SERVER_PASSWORD` 和 `MULTICA_TOKEN`。
 
-`make install` 先启动 `app`，再执行 `docker compose exec -T app bash /workspace/.devcontainer/scripts/install.sh`。仓库随工作区挂载到 `/workspace/.devcontainer`，脚本直接使用这一路径，无需额外挂载；修改脚本后可直接重跑，不需要先启动 OpenCode 或 Multica。脚本准备用户配置链接、串行安装工具，并建立 Compose plugin 入口。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
+`make install` 通过 `docker compose run --rm --no-deps -T opencode bash /workspace/.devcontainer/scripts/install.sh` 在一次性容器中安装工具，不启动应用服务或 Docker-in-Docker。仓库随工作区挂载到 `/workspace/.devcontainer`，脚本直接使用这一路径，无需额外挂载；修改脚本后可直接重跑，不需要先启动 OpenCode 或 Multica。脚本准备用户配置链接、串行安装工具，并建立 Compose plugin 入口。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
 
 `docker-compose.yml` 只挂载工作区和整个 home。`start.sh` 在应用启动前执行 `setup-user.sh`，将 Git、Claude、Codex、mise、OpenCode 的配置链接到仓库的 `config/`，将 `~/.agents` 链接到仓库的 `agents/`；不使用只读配置或单文件挂载。容器内修改配置会直接写回工作树，宿主机编辑仓库文件也立即可见。已有配置和指令会先保留为同名的 `.before-workspace-link`；Claude 的 `CLAUDE.md` 和 `skills` 使用 `.before-agents-link`。备份已存在时拒绝覆盖。默认用户文件从 `/etc/skel` 补齐，已有 `.bashrc`、`.profile` 永远不会被覆盖。
 
@@ -56,9 +56,9 @@ make start
 
 mise、Multica 和 Autoteam 启动器安装在 `~/.local/bin`；mise 使用默认的用户数据、缓存、状态目录，不设置 `MISE_*` 环境变量或专用 provider 目录。Compose plugin 位于 `~/.docker/cli-plugins/docker-compose`。这些内容随 home 持久化，由用户自行管理。
 
-OpenCode 和 Multica 服务通过 login shell 执行 `mise exec -- …`，使用真实工具路径而不是 mise shim；`make bash` 也会进入 mise 工具环境。普通 SSH shell 可运行 `mise exec -- <命令>`，或自行在 `~/.bashrc` 配置 `eval "$(mise activate bash)"`；安装脚本不会修改用户 shell 配置。
+OpenCode 和 Multica 服务通过 login shell 执行 `mise exec -- …`，使用真实工具路径而不是 mise shim；`make bash` 也会进入 `opencode` 容器的 mise 工具环境。其他 shell 可运行 `mise exec -- <命令>`，或自行在 `~/.bashrc` 配置 `eval "$(mise activate bash)"`；安装脚本不会修改用户 shell 配置。
 
-只启动 SSH 工作容器时可用 `make dev`；需要工具时再执行 `make install`。`~/.config/mise/config.toml` 链接到 `/workspace/.devcontainer/config/mise.toml`，支持在容器内调整工具版本；修改版本后直接 `make install` 即可。常规重启无需重新安装；`make update` 会依次拉取镜像、停止服务、安装工具并重新启动。
+`~/.config/mise/config.toml` 链接到 `/workspace/.devcontainer/config/mise.toml`，支持在容器内调整工具版本；修改版本后直接 `make install` 即可。常规重启无需重新安装；`make update` 会依次拉取镜像、停止服务、安装工具并重新启动。
 
 本地修改 `agents/skills` 会直接对所有应用容器生效。配置与 skills 的写回只修改工作树，不自动提交或推送；需要同步到其他环境时自行检查 diff、提交并推送，避免将凭据纳入版本控制。挂载配置变化后需重建容器才能生效。
 
@@ -70,7 +70,7 @@ make start
 
 OpenCode Web 默认地址为 `http://localhost:4096`。首次打开是 OpenCode 自带的「连接到服务器」页：点 **Use password**，密码填 `.env` 里的 `OPENCODE_SERVER_PASSWORD`（必须自己配置，见下面「OpenCode」一节）。
 
-进入容器：
+进入 `opencode` 容器（不提供 SSH 入站连接；镜像保留 SSH 客户端供 Git 等出站连接使用）：
 
 ```bash
 make bash
@@ -100,22 +100,6 @@ make update
 make build
 ```
 
-## SSH
-
-`app` 服务前台跑 sshd，可以直接用普通 SSH 客户端（包括 Claude Desktop 的 SSH 远程环境
-功能）连进容器，当运行环境用：
-
-```bash
-make ssh
-# 等价于 ssh -p 2222 ubuntu@localhost
-```
-
-- 只认公钥登录（`PasswordAuthentication no`），授权公钥列表是
-  `data/.ssh/authorized_keys`；加新 key 直接 append 进去，不用重启容器。
-- 宿主机端口默认 `2222`，可在 `.env` 里用 `SSH_PORT` 覆盖；容器内部固定监听 22。
-- host key 只在缺失时生成一次，持久化在 `data/.ssh/host_keys/`，容器重建或镜像
-  升级都不会跟着换——避免 SSH 客户端每次都要重新信任新的 host key。
-
 ## OpenCode
 
 `install.sh` 安装的是 OpenCode 2.x。2.x 只发布到 npm 的 `@opencode/cli`（GitHub 上只有 tag 没有 release），所以 `config/mise.toml` 里写的是 `"npm:@opencode/cli"`，不是 mise 内置的 `opencode`（后者走 GitHub release，只能装到 1.x）。这个包靠 postinstall 从平台包里拷出真正的二进制，而 mise 默认不跑依赖的安装脚本，所以要用 `allow_builds` 放行，否则装出来的 `opencode` 一运行就报 postinstall 没执行。
@@ -123,7 +107,7 @@ make ssh
 和 1.x 不同、影响这个仓库的几点：
 
 - **Web UI**：`opencode web` 没了，改由 `opencode serve` 同时提供 API 和 Web UI。`serve` 必须带密码，读 `OPENCODE_PASSWORD`，旧名 `OPENCODE_SERVER_PASSWORD` 仍然认；都没配时每次启动随机生成一个。Web UI 的页面本身不设防，打开后在自带的登录页里输密码；所有 API（包括 `/api/info`）都要 Basic Auth（用户名固定 `opencode`），原来的 `/global/health` 也不存在了，所以 compose 健康检查带着 `.env` 里的密码打 `/api/info`，k8s 探针继续用 `tcpSocket`。
-- **关掉常驻后台服务**：2.x 的 `opencode run`、TUI 等命令默认连一个常驻后台服务（`opencode serve --service`，监听 `127.0.0.1:49374`），找不到就拉起一个，靠 `~/.local/state/opencode/service.json` 发现彼此。这里三个容器共享同一个 home 和同一个 `opencode.db`，这套机制会出两个问题：compose 下各容器网络隔离，A 容器注册的 `127.0.0.1` 在 B 容器里连不上，B 会另起一个并覆盖注册文件，A 的服务发现自己被替换就退出，正在跑的 Multica 任务跟着断掉；后台服务启动时还会把库里「执行中但不属于自己」的会话当成崩溃遗留接着跑，而它分不出这些会话其实正在 `opencode` 容器的 `serve` 里跑着。所以 `config/opencode-service.json` 写了 `{"disabled": true}`，链接到 `~/.config/opencode/service.json`：每次 `opencode run`/TUI 都自带一个私有子进程服务器，进程模型和 1.x 一样，也不会去接管别的会话。代价是每次 `run` 多一次服务器启动（实测约 0.4 秒），且不能使用依赖共享后台服务的配对功能。此配置可写，但应保持后台服务禁用，避免共享 home 的服务发现冲突。
+- **关掉常驻后台服务**：2.x 的 `opencode run`、TUI 等命令默认连一个常驻后台服务（`opencode serve --service`，监听 `127.0.0.1:49374`），找不到就拉起一个，靠 `~/.local/state/opencode/service.json` 发现彼此。这里两个应用容器共享同一个 home 和同一个 `opencode.db`，这套机制会出两个问题：compose 下各容器网络隔离，A 容器注册的 `127.0.0.1` 在 B 容器里连不上，B 会另起一个并覆盖注册文件，A 的服务发现自己被替换就退出，正在跑的 Multica 任务跟着断掉；后台服务启动时还会把库里「执行中但不属于自己」的会话当成崩溃遗留接着跑，而它分不出这些会话其实正在 `opencode` 容器的 `serve` 里跑着。所以 `config/opencode-service.json` 写了 `{"disabled": true}`，链接到 `~/.config/opencode/service.json`：每次 `opencode run`/TUI 都自带一个私有子进程服务器，进程模型和 1.x 一样，也不会去接管别的会话。代价是每次 `run` 多一次服务器启动（实测约 0.4 秒），且不能使用依赖共享后台服务的配对功能。此配置可写，但应保持后台服务禁用，避免共享 home 的服务发现冲突。
 - **会话数据**：2.x 和 1.x 共用 `~/.local/share/opencode/opencode.db`，首次启动会在后台把 1.x 的会话迁移到同一个库里的新表，旧表保留（本地 2.3G、511 个会话的库约 15 秒迁完，期间 Web UI 可用）。升级前先停容器再备份 `data/.local/share/opencode/opencode.db*`（包括 WAL 文件），回退时用得上。
 - **配置**：`config/opencode.jsonc` 仍是 1.x 写法，2.x 原样兼容（`permission` 会归一成 `permissions`，`small_model` 变成内置 `title` agent 的模型，`disabled_providers` 变成 policy）。
 - **Multica**：当前固定的 Multica 0.6.1 会按 `opencode --version` 识别 2.x 并切换参数（`--dir`、`--variant` 在 2.x 里被移除）。但 2.x 只能从任务工作目录里的 `opencode.json` 读 MCP 配置，Multica 不愿把凭据写进 agent 可能 `git add` 的目录，所以**带 MCP server 的任务会被直接拒绝**（报错里会写明原因）；这类 agent 要么去掉 MCP，要么换成别的 runtime。
@@ -153,7 +137,7 @@ make agent-cli.smoke
 
 ## Docker
 
-- Docker daemon 由 `docker:28-dind` service 提供，三个应用 service 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
+- Docker daemon 由 `docker:28-dind` service 提供，两个应用 service 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
 - Docker 数据持久化在 `docker-data` volume。
 
 ## VS Code
@@ -174,15 +158,11 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 目录准备：`setup` initContainer 预建仓库和用户配置父目录，将指定目录属主设置为 `1000:1000`，包括已有卷中由嵌套挂载创建的父目录。不递归修改文件权限，保留 SSH 私钥等敏感文件的权限。
 - 工具安装：`setup` 准备目录后，`sync-runtime` 更新仓库，`install-tools` 通过 `start.sh` 准备用户链接并执行 `scripts/install.sh`，完成后才启动应用，无需手工执行 `make install`。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装和仓库中的版本配置。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
 - 工具解析：应用通过 `mise exec` 获取真实 provider PATH，避免 Multica 把 Codex 等误启动成 mise task runner；用 `make agent-cli.smoke` 在空白目录复验。
-- 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。镜像的 `entrypoint.sh` 从 `/etc/skel` 补齐默认用户文件，运行时的 `start.sh` 准备配置与指令链接，再执行应用命令；修改链接逻辑不需要重建镜像。`app` 前台运行 sshd，跟 OpenCode、Multica 隔离。
+- 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。镜像的 `entrypoint.sh` 从 `/etc/skel` 补齐默认用户文件，运行时的 `start.sh` 准备配置与指令链接，再执行应用命令；修改链接逻辑不需要重建镜像。
 - 鉴权：`opencode serve` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`：Web UI 在自带登录页选 Use password 输入，API 客户端走 HTTP Basic Auth（用户名固定为 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
-- Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。device name 不再单独设置——Pod 固定了 `hostname: devcontainer-cloud`（同 UTS namespace，opencode/multica/app 都生效），`MULTICA_DAEMON_DEVICE_NAME` 未配置时 daemon 会读容器 hostname 当默认值，跟着显示 `devcontainer-cloud`。
-- Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode`、`multica` 和 `app` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
+- Multica 身份：`multica` 容器显式设置 `MULTICA_DAEMON_ID` 为原 `devcontainer.cloud` runtime 的 ID。官方以 daemon ID 作为 runtime 去重键；Pod 名变化或 CLI 升级后会更新原 runtime，不会注册成 `app-<hash>-<suffix>` 新机器。该 ID 不是凭据，不要随镜像升级修改。device name 不再单独设置——Pod 固定了 `hostname: devcontainer-cloud`（同 UTS namespace，opencode/multica 都生效），`MULTICA_DAEMON_DEVICE_NAME` 未配置时 daemon 会读容器 hostname 当默认值，跟着显示 `devcontainer-cloud`。
+- Docker-in-Docker：`dind` 是同 Pod 内的特权 sidecar，`opencode` 和 `multica` 容器通过 `DOCKER_HOST=tcp://localhost:2375` 连接（和 compose 里的 `tcp://docker:2375` 不同，这里是同一个 Pod）。
 - 探针：OpenCode 使用 `tcpSocket`，避免鉴权导致 HTTP 401。
-- SSH：`app` 容器同本地一样跑 sshd，独立的 `app-ssh` Service（`type: LoadBalancer`，
-  依赖 k3s 自带的 ServiceLB/klipper）把 2222 端口（避开节点自己的系统 sshd 占用的
-  22）暴露到集群外，`make deploy.ssh` 连接。云端 `user-data-pvc` 里的
-  `authorized_keys` 是独立于本地 `./data` 的一份，需要单独确认已经写入授权公钥。
 - 数据迁移：旧的 `home-data-pvc` 在迁移时全程只读保留。注意 `~/.local/share/lark-cli/master.key` 从来没有迁到集群，只在本地 `./data` 里有，要用 lark CLI 得单独上传。之后的更新走 CI。
 
 手动操作（需要本地 `kubectl` 已指向该集群、并安装 `kubeseal`）：
@@ -191,13 +171,13 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 make deploy.config   # 预览 deploy/ 的 kustomize 渲染结果
 make deploy.apply    # 渲染 deploy/、apply 并等待 rollout
 make deploy.status   # 查看 Pod/Service/Ingress/PVC
-make deploy.logs     # 查看 app 容器日志
-make deploy.bash     # 进入集群里的 app 容器
+make deploy.logs     # 查看 opencode 容器日志
+make deploy.bash     # 进入集群里的 opencode 容器
 make deploy.multica-status  # 查询 daemon 状态
 make deploy.multica-logs    # 查看 daemon 日志
 ```
 
-Kubernetes Pod 内分别运行 `opencode`、`multica` 和 `app` 容器；Multica 认证和任务目录随整挂的 `user-data-pvc` 持久化。首次部署会使用 `MULTICA_TOKEN` 自动登录，之后可用 status 和 Runtimes 页面确认在线。
+Kubernetes Pod 内分别运行 `opencode`、`multica` 和 `dind` 容器；Multica 认证和任务目录随整挂的 `user-data-pvc` 持久化。首次部署会使用 `MULTICA_TOKEN` 自动登录，之后可用 status 和 Runtimes 页面确认在线。
 
 修改 `deploy/app-secret.yaml`（明文，已被 `deploy/.gitignore` 排除）后，用 `make deploy.encode` 重新生成 `deploy/app-sealed-secret.yaml`。
 
