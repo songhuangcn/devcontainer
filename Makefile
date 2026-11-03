@@ -11,7 +11,7 @@ HADOLINT_IMAGE = hadolint/hadolint:v2.12.0
 .PHONY: check
 check: ## 脚本/Dockerfile 检查、Compose/Kustomize 校验、运行时脚本测试
 	@# 用 docker 跑，本机不需要安装 shellcheck / hadolint；文件走 stdin，不依赖 bind mount
-	@set -e; for f in $$(find scripts -name '*.sh' | sort); do \
+	@set -e; for f in $$(find scripts tests -name '*.sh' | sort); do \
 		echo "shellcheck $$f"; \
 		docker run --rm -i $(SHELLCHECK_IMAGE) - < "$$f"; \
 	done
@@ -23,8 +23,7 @@ check: ## 脚本/Dockerfile 检查、Compose/Kustomize 校验、运行时脚本�
 	$(MAKE) deploy.config > /dev/null
 
 .PHONY: dev
-dev: ## 准备配置和数据目录，启动 SSH 工作容器
-	bash scripts/setup.sh
+dev: setup ## 准备配置和数据目录，启动 SSH 工作容器
 	$(COMPOSE) up -d app
 
 .PHONY: deploy
@@ -41,21 +40,17 @@ install: dev ## 在已启动容器中安装/更新用户工具，安装脚本无
 
 .PHONY: test
 test: ## 在主镜像中验证入口和安装脚本（不下载工具、不接触真实 data）
-	tar -cf - scripts config agents | \
-		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
-		-c 'root=$$(mktemp -d); tar -xf - -C "$$root"; bash "$$root/scripts/test-runtime.sh"'
+test: TEST_SCRIPT = test-runtime.sh
 
 .PHONY: install.test
 install.test: ## 在隔离容器中验证真实安装；脚本和配置通过 stdin 提供，不进入镜像
-	tar -cf - scripts config agents | \
+install.test: TEST_SCRIPT = test-install.sh
+
+test install.test:
+	tar -cf - scripts tests config agents | \
 		docker run --rm -i --entrypoint bash $${IMAGE_NAME:-songhuangcn/devcontainer}:$${IMAGE_TAG:-latest} \
 		-eu -o pipefail -c 'root=$$(mktemp -d); tar -xf - -C "$$root"; \
-		bash "$$root/scripts/entrypoint.sh"; \
-		bash "$$root/scripts/install.sh"; export PATH="$$HOME/.local/bin:$$PATH"; \
-		cd /tmp; mise exec -- docker compose version; \
-		mise exec -- python -c "import defusedxml, jsonschema, numpy, pypdf, pymupdf, yaml, requests, ruamel.yaml, urllib3"; \
-		mise settings set jobs 2; grep -q "jobs = 2" "$$root/config/mise.toml"; \
-		test -r "$$HOME/.claude/CLAUDE.md"; test -d "$$HOME/.claude/skills"'
+		bash "$$root/tests/$(TEST_SCRIPT)"'
 
 .PHONY: run
 run:
@@ -99,7 +94,7 @@ multica.smoke:
 
 .PHONY: agent-cli.smoke
 agent-cli.smoke:
-	$(COMPOSE) exec -T app bash -lc 'exec mise exec -- bash /workspace/.devcontainer/scripts/smoke-agent-cli-launchers.sh'
+	$(COMPOSE) exec -T app bash -lc 'exec mise exec -- bash /workspace/.devcontainer/tests/smoke-agent-cli-launchers.sh'
 
 .PHONY: restart
 restart: stop start

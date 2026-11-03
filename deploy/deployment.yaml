@@ -103,7 +103,7 @@ spec:
           - name: user-data
             mountPath: /home/ubuntu
         name: install-tools
-        args: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "/workspace/.devcontainer/scripts/install.sh"]
+        args: ["bash", "/workspace/.devcontainer/scripts/install.sh"]
         resources:
           requests:
             memory: "512Mi"

@@ -3,6 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 root="$(mktemp -d)"
 trap 'rm -rf -- "${root}"' EXIT
 export HOME="${root}/home"
@@ -12,7 +13,7 @@ chmod 700 "${HOME}"
 # Compose 在启动容器之前准备 home 卷根；重复 setup 保留配置、数据和权限。
 setup_root="${root}/workspace/.devcontainer"
 mkdir -p "${setup_root}/scripts"
-cp "${SCRIPT_DIR}/setup.sh" "${setup_root}/scripts/setup.sh"
+cp "${ROOT_DIR}/scripts/setup.sh" "${setup_root}/scripts/setup.sh"
 printf 'TEST_SETTING=default\n' > "${setup_root}/.env.sample"
 bash "${setup_root}/scripts/setup.sh"
 cmp "${setup_root}/.env.sample" "${setup_root}/.env"
@@ -28,29 +29,42 @@ test "$(cat "${setup_root}/data/existing")" = 'user data'
 test "$(stat -c %a "${setup_root}/data")" = 700
 
 # 空 home 从 /etc/skel 补齐；已有用户文件不覆盖；参数和退出码原样传递。
-bash "${SCRIPT_DIR}/entrypoint.sh"
+bash "${ROOT_DIR}/scripts/entrypoint.sh"
 cmp /etc/skel/.bashrc "${HOME}/.bashrc"
 test "$(stat -c %a "${HOME}")" = 700
 printf 'custom profile\n' > "${HOME}/.profile"
-bash "${SCRIPT_DIR}/entrypoint.sh" bash -c 'test "$1" = "two words"' -- 'two words'
+bash "${ROOT_DIR}/scripts/entrypoint.sh" bash -c 'test "$1" = "two words"' -- 'two words'
 test "$(cat "${HOME}/.profile")" = 'custom profile'
 rc=0
-bash "${SCRIPT_DIR}/entrypoint.sh" bash -c 'exit 23' || rc=$?
+bash "${ROOT_DIR}/scripts/entrypoint.sh" bash -c 'exit 23' || rc=$?
 test "${rc}" = 23
 
 # 使用隔离仓库测试配置迁移、双向写回和源文件的原子替换。
 runtime="${root}/runtime"
 mkdir -p "${runtime}/agents/skills/example" "${HOME}/.config/mise" \
   "${HOME}/.agents" "${HOME}/.claude/skills/legacy"
-cp -a "${SCRIPT_DIR}" "${runtime}/scripts"
-cp -a "${SCRIPT_DIR}/../config" "${runtime}/config"
+cp -a "${ROOT_DIR}/scripts" "${runtime}/scripts"
+cp -a "${ROOT_DIR}/tests" "${runtime}/tests"
+cp -a "${ROOT_DIR}/config" "${runtime}/config"
 printf 'instructions\n' > "${runtime}/agents/AGENTS.md"
 printf 'skill\n' > "${runtime}/agents/skills/example/SKILL.md"
 printf 'legacy mise config\n' > "${HOME}/.config/mise/config.toml"
 printf 'legacy agents\n' > "${HOME}/.agents/AGENTS.md"
 printf 'legacy instructions\n' > "${HOME}/.claude/CLAUDE.md"
 printf 'legacy skill\n' > "${HOME}/.claude/skills/legacy/SKILL.md"
-bash "${runtime}/scripts/setup-user.sh"
+
+# 配置来源不完整时，不迁移已有配置，也不执行应用命令。
+mv "${runtime}/config/opencode-service.json" "${runtime}/config/opencode-service.saved"
+if bash "${runtime}/scripts/start.sh" touch "${root}/unexpected-start"; then
+  printf 'Expected incomplete configuration to stop startup\n' >&2
+  exit 1
+fi
+test ! -e "${root}/unexpected-start"
+test ! -L "${HOME}/.config/mise/config.toml"
+test "$(cat "${HOME}/.config/mise/config.toml")" = 'legacy mise config'
+mv "${runtime}/config/opencode-service.saved" "${runtime}/config/opencode-service.json"
+
+bash "${runtime}/scripts/start.sh"
 test "$(readlink "${HOME}/.config/mise/config.toml")" = "${runtime}/config/mise.toml"
 test "$(cat "${HOME}/.config/mise/config.toml.before-workspace-link")" = 'legacy mise config'
 test "$(cat "${HOME}/.agents.before-workspace-link/AGENTS.md")" = 'legacy agents'
@@ -64,7 +78,11 @@ GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="${HOME}/.gitconfig" git config --global
 test "$(git config -f "${runtime}/config/.gitconfig" workspace.test)" = true
 test -L "${HOME}/.gitconfig"
 rc=0
-bash "${runtime}/scripts/start.sh" bash -c 'test "$1" = "two words"; exit 23' -- 'two words' || rc=$?
+bash "${runtime}/scripts/start.sh" bash -eu -c '
+  test "$1" = "two words"
+  flock -n "${HOME}/.cache/workspace-config.lock" true
+  exit 23
+' -- 'two words' || rc=$?
 test "${rc}" = 23
 
 # 隔离测试所用的旧镜像环境；被测脚本仅使用 mise 默认用户目录。
@@ -201,11 +219,11 @@ test "$(grep -c '^smoke$' "${TEST_LOG}")" = 2
 cp "${TEST_FIXTURES}/multica" "${HOME}/.local/bin/multica"
 chmod +x "${HOME}/.local/bin/multica"
 export PATH="${HOME}/.local/bin:${PATH}"
-TEST_AUTHENTICATED=1 bash "${SCRIPT_DIR}/start-multica.sh"
-MULTICA_TOKEN=test-token bash "${SCRIPT_DIR}/start-multica.sh"
+TEST_AUTHENTICATED=1 bash "${ROOT_DIR}/scripts/start-multica.sh"
+MULTICA_TOKEN=test-token bash "${ROOT_DIR}/scripts/start-multica.sh"
 test "$(grep -c '^login$' "${TEST_LOG}")" = 1
 test "$(grep -c '^daemon$' "${TEST_LOG}")" = 2
-if env -u MULTICA_TOKEN bash "${SCRIPT_DIR}/start-multica.sh"; then
+if env -u MULTICA_TOKEN bash "${ROOT_DIR}/scripts/start-multica.sh"; then
   printf 'Expected missing token to fail\n' >&2
   exit 1
 fi

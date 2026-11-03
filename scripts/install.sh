@@ -11,7 +11,7 @@ mkdir -p "${HOME}/.cache" "${HOME}/.local/bin" \
 exec 9>"${HOME}/.cache/workspace-install.lock"
 flock 9
 
-bash "${SCRIPT_DIR}/setup-user.sh"
+bash "${SCRIPT_DIR}/start.sh"
 
 if [ ! -x "${HOME}/.local/bin/mise" ]; then
   curl -fsSL https://mise.run | sh
@@ -52,4 +52,4 @@ printf '%s  autoteam\n' "${AUTOTEAM_LAUNCHER_SHA256}" | sha256sum --check -
 install -m 755 autoteam "${HOME}/.local/bin/autoteam"
 
 multica version
-mise exec -- bash "${SCRIPT_DIR}/smoke-agent-cli-launchers.sh"
+mise exec -- bash "${SCRIPT_DIR}/../tests/smoke-agent-cli-launchers.sh"

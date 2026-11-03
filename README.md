@@ -9,9 +9,10 @@
 - `devcontainer.json`：仅作为 VS Code 快速打开入口（指向 `app` service），不再使用 devcontainer features。
 - `scripts/setup.sh`：创建 `.env` 和持久化 home 目录 `./data`。
 - `scripts/entrypoint.sh`：从 `/etc/skel` 补齐缺失的默认用户文件，然后执行容器命令。
-- `scripts/start.sh`、`scripts/setup-user.sh`：应用启动前，将用户配置、指令和 skills 链接到可写仓库。
+- `scripts/start.sh`：将用户配置、指令和 skills 链接到可写仓库，再执行应用命令；无参数时只准备配置。
 - `scripts/sync-runtime.sh`：生产 Pod 启动前更新持久化仓库，保留本地修改，遇到冲突停止。
 - `scripts/install.sh`：容器启动后安装 mise、`config/mise.toml` 中的工具、Python 依赖、Multica 和 Autoteam 启动器。
+- `tests/`：运行时回归、真实安装验证和 agent CLI 冒烟测试。
 - `config/`、`agents/`：纳入版本控制的工具配置、用户指令和 skills。
 - `deploy/`：完整的 Kubernetes 部署配置，包括唯一的 `kustomization.yaml`。
 
@@ -50,7 +51,7 @@ make start
 
 `make install` 先启动 `app`，再执行 `docker compose exec -T app bash /workspace/.devcontainer/scripts/install.sh`。仓库随工作区挂载到 `/workspace/.devcontainer`，脚本直接使用这一路径，无需额外挂载；修改脚本后可直接重跑，不需要先启动 OpenCode 或 Multica。脚本准备用户配置链接、串行安装工具，并建立 Compose plugin 入口。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
 
-`docker-compose.yml` 只挂载工作区和整个 home。`start.sh` 在应用启动前执行 `setup-user.sh`，将 Git、Claude、Codex、mise、OpenCode 的配置链接到仓库的 `config/`，将 `~/.agents` 链接到仓库的 `agents/`；不使用只读配置或单文件挂载。容器内修改配置会直接写回工作树，宿主机编辑仓库文件也立即可见。已有配置和指令会先保留为同名的 `.before-workspace-link`；Claude 的 `CLAUDE.md` 和 `skills` 使用 `.before-agents-link`。备份已存在时拒绝覆盖。默认用户文件从 `/etc/skel` 补齐，已有 `.bashrc`、`.profile` 永远不会被覆盖。
+`docker-compose.yml` 只挂载工作区和整个 home。`start.sh` 在应用启动前将 Git、Claude、Codex、mise、OpenCode 的配置链接到仓库的 `config/`，将 `~/.agents` 链接到仓库的 `agents/`；不使用只读配置或单文件挂载。容器内修改配置会直接写回工作树，宿主机编辑仓库文件也立即可见。已有配置和指令会先保留为同名的 `.before-workspace-link`；Claude 的 `CLAUDE.md` 和 `skills` 使用 `.before-agents-link`。备份已存在时拒绝覆盖。默认用户文件从 `/etc/skel` 补齐，已有 `.bashrc`、`.profile` 永远不会被覆盖。
 
 编辑器若通过替换文件保存，应直接编辑仓库路径或软链的真实路径，避免把用户路径的软链替换成独立文件。
 
@@ -151,6 +152,19 @@ make agent-cli.smoke
 
 `make agent-cli.smoke` 会在空白临时目录中按 Multica daemon 使用的方式解析并执行 Codex、Claude 和 OpenCode，防止 provider 命令错误落到 mise task runner。验证时先用 `make multica.status` 确认 runtime 在线，再从 Multica 触发一次真实 agent task。容器重启后，认证和 task workspace 会继续保留。
 
+## 检查与测试
+
+测试脚本集中在 `tests/`，功能脚本保留在 `scripts/`：
+
+```bash
+make check          # ShellCheck（含 tests）、Dockerfile、Compose、Kustomize 和运行时回归
+make test           # 临时 home 和命令替身，不下载工具、不接触真实 data
+make install.test   # 一次性容器内联网安装并验证工具、配置写回和用户链接
+make agent-cli.smoke  # 在 app 容器内验证已安装的 agent CLI
+```
+
+`make test` 和 `make install.test` 共用主镜像容器入口，通过 stdin 提供 `scripts/`、`tests/`、配置和 skills，不挂载持久化 home。`tests/test-runtime.sh` 包含本地 Git 仓库同步回归；`tests/test-install.sh` 仅用于一次性容器。安装脚本会调用 `tests/smoke-agent-cli-launchers.sh`，验证 provider 没有误解析为 mise task runner。
+
 ## Docker
 
 - Docker daemon 由 `docker:28-dind` service 提供，三个应用 service 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
@@ -172,7 +186,7 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 运行时仓库：`sync-runtime` initContainer 将公开仓库检出到 `workspace-pvc` 中的 `/workspace/.devcontainer`，应用直接使用同一份可写仓库，无额外 runtime 卷。配置、skills、脚本和 Git 工作树随 PVC 保留，Pod 重建不会丢失在线修改。已有非仓库目录或来源不匹配的仓库不会被接管。CI 将 `RUNTIME_REVISION` 固定为本次提交的完整 SHA；手工部署默认使用 `main`，也可指定已经推送的提交。
 - 仓库更新：使用非强制 Git checkout；未提交改动与目标提交不冲突时保留，冲突或存在未被目标版本包含的本地提交时停止在 `sync-runtime`，保留工作树供人工处理，不清理或隐式 stash。旧 HEAD 会保存到 `refs/workspace/saved-heads/<完整 SHA>`，避免 detached HEAD 上的用户提交失去引用。部署前应检查生产仓库的修改并按需提交、推送；冲突后需用挂载同一 PVC 的维护 Pod 处理，再重试部署。
 - 目录准备：`setup` initContainer 预建仓库和用户配置父目录，将指定目录属主设置为 `1000:1000`，包括已有卷中由嵌套挂载创建的父目录。不递归修改文件权限，保留 SSH 私钥等敏感文件的权限。
-- 工具安装：`setup` 准备目录后，`sync-runtime` 更新仓库，`install-tools` 通过 `start.sh` 准备用户链接并执行 `scripts/install.sh`，完成后才启动应用，无需手工执行 `make install`。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装和仓库中的版本配置。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
+- 工具安装：`setup` 准备目录后，`sync-runtime` 更新仓库，`install-tools` 执行 `scripts/install.sh`，由安装脚本调用 `start.sh` 准备用户链接，完成后才启动应用，无需手工执行 `make install`。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装和仓库中的版本配置。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
 - 工具解析：应用通过 `mise exec` 获取真实 provider PATH，避免 Multica 把 Codex 等误启动成 mise task runner；用 `make agent-cli.smoke` 在空白目录复验。
 - 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。镜像的 `entrypoint.sh` 从 `/etc/skel` 补齐默认用户文件，运行时的 `start.sh` 准备配置与指令链接，再执行应用命令；修改链接逻辑不需要重建镜像。`app` 前台运行 sshd，跟 OpenCode、Multica 隔离。
 - 鉴权：`opencode serve` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`：Web UI 在自带登录页选 Use password 输入，API 客户端走 HTTP Basic Auth（用户名固定为 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。

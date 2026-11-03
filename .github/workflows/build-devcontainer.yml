@@ -11,6 +11,7 @@ on:
       - Makefile
       - README.md
       - scripts/**
+      - tests/**
       - config/**
       - agents/**
       - deploy/**

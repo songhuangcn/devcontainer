@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 在空白目录验证 provider 解析和版本命令，需由 mise exec 提供真实工具 PATH。
 set -euo pipefail
 
 tools=(codex claude opencode)
