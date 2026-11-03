@@ -9,6 +9,26 @@ export HOME="${root}/home"
 mkdir -p "${HOME}"
 chmod 700 "${HOME}"
 
+# Compose 在启动容器之前准备嵌套挂载目录；重复 setup 保留配置、数据和权限。
+setup_root="${root}/workspace/.devcontainer"
+mkdir -p "${setup_root}/scripts"
+cp "${SCRIPT_DIR}/setup.sh" "${setup_root}/scripts/setup.sh"
+printf 'TEST_SETTING=default\n' > "${setup_root}/.env.sample"
+bash "${setup_root}/scripts/setup.sh"
+cmp "${setup_root}/.env.sample" "${setup_root}/.env"
+for directory in .agents .claude .codex .config/mise .config/opencode; do
+  test -d "${setup_root}/data/${directory}"
+  test -w "${setup_root}/data/${directory}"
+  test "$(stat -c %u "${setup_root}/data/${directory}")" = "$(id -u)"
+done
+printf 'TEST_SETTING=custom\n' > "${setup_root}/.env"
+printf 'user data\n' > "${setup_root}/data/.claude/existing"
+chmod 700 "${setup_root}/data/.claude"
+bash "${setup_root}/scripts/setup.sh"
+test "$(cat "${setup_root}/.env")" = 'TEST_SETTING=custom'
+test "$(cat "${setup_root}/data/.claude/existing")" = 'user data'
+test "$(stat -c %a "${setup_root}/data/.claude")" = 700
+
 # 空 home 从 /etc/skel 补齐；已有用户文件不覆盖；参数和退出码原样传递。
 bash "${SCRIPT_DIR}/entrypoint.sh"
 cmp /etc/skel/.bashrc "${HOME}/.bashrc"

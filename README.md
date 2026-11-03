@@ -46,7 +46,7 @@ make start
 
 `make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data/.agents`、`./data/.claude`、`./data/.codex`、`./data/.config/mise`、`./data/.config/opencode`，避免 Docker daemon 以 root 身份创建嵌套挂载需要的目录。启动服务前填写 `.env` 中的 `OPENCODE_SERVER_PASSWORD` 和 `MULTICA_TOKEN`。
 
-`make install` 先启动 `app`，再执行 `docker compose exec -T app bash /opt/workspace/scripts/install.sh`。`scripts/` 是只读挂载，修改脚本后可直接重跑；不需要先启动 OpenCode 或 Multica。脚本串行安装用户工具，并建立 Compose plugin 入口及 Claude 的用户指令、skills 软链。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
+`make install` 先启动 `app`，再执行 `docker compose exec -T app bash /workspace/.devcontainer/scripts/install.sh`。仓库随工作区挂载到 `/workspace/.devcontainer`，脚本直接使用这一路径，无需额外挂载；修改脚本后可直接重跑，不需要先启动 OpenCode 或 Multica。脚本串行安装用户工具，并建立 Compose plugin 入口及 Claude 的用户指令、skills 软链。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
 
 `docker-compose.yml` 把 `./data` 整挂到 `/home/ubuntu`，再用 `./config` 的文件和 `./agents` 目录覆盖对应路径。默认用户文件直接从 `/etc/skel` 补齐，只补缺失项，已有 `.bashrc`、`.profile` 永远不会被覆盖。`install.sh` 创建 `~/.claude/CLAUDE.md -> ../.agents/AGENTS.md` 和 `~/.claude/skills -> ../.agents/skills`；如目标原先是实体文件或目录，会先保留为同名的 `.before-agents-link`。
 
@@ -165,8 +165,9 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 存储：`workspace-pvc`（15Gi）、`user-data-pvc`（20Gi，整个挂成 `/home/ubuntu`，包含运行时安装的工具）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。`local-path` 不支持事后扩容；工具下载和安装缓存也占用 home 卷空间，需留意容量。
 - **待办（2026-09-20 之后）**：旧的 `home-data-pvc`（8Gi）在切到整挂 home 时原封不动留着当退路，新卷跑稳几周后从 `deploy/pvc.yaml` 删掉并 `kubectl delete pvc home-data-pvc`。顺带还有一个更早遗留的 `openclaw-data-pvc` 可以一起回收。
 - 配置：`deploy/kustomization.yaml` 从 `../config/` 生成带内容哈希的 ConfigMap；配置变化触发 Pod 滚动更新。因为配置源位于部署目录之外，渲染使用 `kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone`，再将结果交给 `kubectl apply -f -`，统一封装在 Makefile 中。
-- 运行时仓库：`sync-runtime` initContainer 将公开仓库的指定提交检出到独立的 `emptyDir`，挂为 `/opt/workspace`；其中的 `agents/` 覆盖 `~/.agents`，`scripts/` 直接用于启动与安装。镜像不包含这些文件。CI 将 `RUNTIME_REVISION` 固定为本次提交的完整 SHA；手工部署默认使用 `main`，也可在 `deploy/kustomization.yaml` 中指定已经推送的提交。
-- 工具安装：`fix-ownership` 准备挂载点和属主，`sync-runtime` 获取仓库，`install-tools` 执行仓库中的 `scripts/install.sh`，完成后才启动应用。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
+- 运行时仓库：`sync-runtime` initContainer 将公开仓库的指定提交检出到独立的 `emptyDir`，应用中只读挂载为 `/workspace/.devcontainer`，与 Compose 的仓库路径一致，不改写 `workspace-pvc` 中的数据。相同卷的 `agents/` 子目录另行只读挂载到 `~/.agents`，供工具从默认用户目录读取指令和 skills；同一卷挂载到两个不同路径是合法的。镜像不包含这些文件。CI 将 `RUNTIME_REVISION` 固定为本次提交的完整 SHA；手工部署默认使用 `main`，也可在 `deploy/kustomization.yaml` 中指定已经推送的提交。
+- 目录准备：`setup` initContainer 与本地 `scripts/setup.sh` 一样预建嵌套挂载目录，但集群新卷由 root 创建，还需将卷根和这些目录的属主设置为 `1000:1000`，否则非 root 的应用无法写入。只调整指定目录的属主，不递归改权限；这一步必须在挂载用户配置和启动应用之前完成。
+- 工具安装：`setup` 准备目录后，`sync-runtime` 获取仓库，`install-tools` 执行 `/workspace/.devcontainer/scripts/install.sh`，完成后才启动应用，无需手工执行 `make install`。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
 - 工具解析：应用通过 `mise exec` 获取真实 provider PATH，避免 Multica 把 Codex 等误启动成 mise task runner；用 `make agent-cli.smoke` 在空白目录复验。
 - 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。`entrypoint.sh` 仅从 `/etc/skel` 补齐默认用户文件；Claude 到 `~/.agents` 的软链由 `install.sh` 创建。`app` 前台运行 sshd，跟 OpenCode、Multica 隔离。
 - 鉴权：`opencode serve` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`：Web UI 在自带登录页选 Use password 输入，API 客户端走 HTTP Basic Auth（用户名固定为 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。

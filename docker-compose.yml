@@ -17,14 +17,14 @@ x-app-base: &app-base
   init: true
   restart: unless-stopped
   volumes:
+      # 仓库位于 /workspace/.devcontainer，脚本直接从这里执行，无需重复挂载。
       - ..:/workspace
       # 整挂用户 home，mise 和工具链在启动后装到卷中，由所有应用容器共享。
       - ./data:/home/ubuntu
       # 可提交的用户指令和 skills 覆盖持久化数据中的同名目录。
       - ./agents:/home/ubuntu/.agents
-      # 本地修改工具版本后可直接 make install，无需重新构建镜像。
-      - ./config/mise.toml:/home/ubuntu/.config/mise/config.toml:ro
-      - ./scripts:/opt/workspace/scripts:ro
+      # 双向可写：容器内调整版本也会写回仓库配置，无需重新构建镜像。
+      - ./config/mise.toml:/home/ubuntu/.config/mise/config.toml
       # 可提交的工具配置覆盖 data 中对应文件；登录态和历史数据仍保存在 data。
       # 这几条是 /home/ubuntu 的嵌套挂载，父目录必须已存在于 ./data，否则由
       # Docker daemon 以 root 创建，容器内的 ubuntu 用户就写不进去（`make setup`）。
@@ -42,7 +42,7 @@ services:
   # home/workspace 入口（host key 持久化在 ./data，见 scripts/start-sshd.sh）。
   app:
     <<: *app-base
-    command: ["bash", "/opt/workspace/scripts/start-sshd.sh"]
+    command: ["bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
     ports:
       - "${SSH_PORT:-2222}:22"
   opencode:
@@ -68,7 +68,7 @@ services:
     command:
       - bash
       - -lc
-      - exec mise exec -- bash /opt/workspace/scripts/start-multica.sh
+      - exec mise exec -- bash /workspace/.devcontainer/scripts/start-multica.sh
     healthcheck:
       test: ["CMD", "/home/ubuntu/.local/bin/multica", "daemon", "status", "--output", "json"]
       interval: 15s

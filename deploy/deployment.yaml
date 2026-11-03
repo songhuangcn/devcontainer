@@ -45,8 +45,10 @@ spec:
       # 不用 fsGroup：它会递归放宽整个卷的权限（比如把 .ssh 私钥从 600 改成
       # 660），导致 ssh 客户端拒绝使用私钥。这里只处理属主，不动权限位。
       initContainers:
-      - name: fix-ownership
+      - name: setup
         image: busybox:1.36
+        # 与本地 scripts/setup.sh 一样预建嵌套挂载目录；集群中的卷由 root
+        # 创建，还需将卷根和这些目录交给镜像内的 ubuntu（1000:1000）。
         # 除了卷根目录，还要预建 config-data 那几条 subPath 挂载的父目录：
         # kubelet 会以 root 补出缺失的挂载点父目录，而它比镜像 ENTRYPOINT 的
         # entrypoint.sh 更早，所以 /etc/skel 兜不住这一步——空卷
@@ -86,12 +88,12 @@ spec:
         - pipefail
         - -c
         - |
-          git init -q /opt/workspace
-          git -C /opt/workspace fetch --depth=1 https://github.com/songhuangcn/devcontainer.git "${RUNTIME_REVISION}"
-          git -C /opt/workspace checkout --detach FETCH_HEAD
+          git init -q /workspace/.devcontainer
+          git -C /workspace/.devcontainer fetch --depth=1 https://github.com/songhuangcn/devcontainer.git "${RUNTIME_REVISION}"
+          git -C /workspace/.devcontainer checkout --detach FETCH_HEAD
         volumeMounts:
         - name: runtime
-          mountPath: /opt/workspace
+          mountPath: /workspace/.devcontainer
       # 工具安装到持久化 home，完成后才启动依赖这些 CLI 的应用容器。
       - <<: &app-base
           image: songhuangcn/devcontainer
@@ -109,12 +111,16 @@ spec:
           - name: user-data
             mountPath: /home/ubuntu
           - name: runtime
-            mountPath: /opt/workspace
+            # 与 Compose 的仓库路径一致；独立 emptyDir 不改写 workspace PVC。
+            # 必须在 /workspace 父挂载之后，避免被覆盖。
+            mountPath: /workspace/.devcontainer
             readOnly: true
-          # 与本地 Compose 一样，从运行时仓库覆盖 home 中的 skills。
+          # 同一卷允许挂到不同路径；这里只映射 agents 子目录到用户默认位置，
+          # 与本地 Compose 一样覆盖持久化 home 中的用户指令和 skills。
           - name: runtime
             mountPath: /home/ubuntu/.agents
             subPath: agents
+            readOnly: true
           # 可提交的工具配置由 deploy/kustomization.yaml 从 config/ 生成。
           - name: config-data
             mountPath: /home/ubuntu/.gitconfig
@@ -136,7 +142,7 @@ spec:
             mountPath: /home/ubuntu/.config/opencode/service.json
             subPath: opencode-service.json
         name: install-tools
-        args: ["bash", "/opt/workspace/scripts/install.sh"]
+        args: ["bash", "/workspace/.devcontainer/scripts/install.sh"]
         resources:
           requests:
             memory: "512Mi"
@@ -180,7 +186,7 @@ spec:
       - <<: *app-base
         name: multica
         # 同上，不要加 command。
-        args: ["bash", "-lc", "exec mise exec -- bash /opt/workspace/scripts/start-multica.sh"]
+        args: ["bash", "-lc", "exec mise exec -- bash /workspace/.devcontainer/scripts/start-multica.sh"]
         env:
         - name: DOCKER_HOST
           value: tcp://localhost:2375
@@ -207,7 +213,7 @@ spec:
         # 作为前台进程，提供一个可以从集群外 SSH 进来的共享 home/workspace 入口
         # （host key 持久化在 user-data-pvc，见 scripts/start-sshd.sh）。
         # 不要加 command：会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
-        args: ["bash", "/opt/workspace/scripts/start-sshd.sh"]
+        args: ["bash", "/workspace/.devcontainer/scripts/start-sshd.sh"]
         ports:
         - containerPort: 22
           name: ssh

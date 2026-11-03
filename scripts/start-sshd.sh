@@ -4,7 +4,7 @@
 # 重新信任新的 host key。
 set -euo pipefail
 
-# k3s 的 local-path PV 首次创建时默认是 777；deploy 里的 fix-ownership
+# k3s 的 local-path PV 首次创建时默认是 777；deploy 里的 setup
 # initContainer 只处理属主，不动权限位。sshd 的 StrictModes 会因为 home
 # 目录里其他人可写而直接拒绝登录（"bad ownership or modes for directory"），
 # 所以在这里显式收紧一次。本地 compose 的 ./data 通常已经是安全权限，chmod

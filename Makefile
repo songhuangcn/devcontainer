@@ -37,7 +37,7 @@ setup:
 
 .PHONY: install
 install: dev ## 在已启动容器中安装/更新用户工具，安装脚本无需重建镜像
-	$(COMPOSE) exec -T app bash /opt/workspace/scripts/install.sh
+	$(COMPOSE) exec -T app bash /workspace/.devcontainer/scripts/install.sh
 
 .PHONY: test
 test: ## 在主镜像中验证入口和安装脚本（不下载工具、不接触真实 data）
@@ -99,7 +99,7 @@ multica.smoke:
 
 .PHONY: agent-cli.smoke
 agent-cli.smoke:
-	$(COMPOSE) exec -T app bash -lc 'exec mise exec -- bash /opt/workspace/scripts/smoke-agent-cli-launchers.sh'
+	$(COMPOSE) exec -T app bash -lc 'exec mise exec -- bash /workspace/.devcontainer/scripts/smoke-agent-cli-launchers.sh'
 
 .PHONY: restart
 restart: stop start
