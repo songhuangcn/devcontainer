@@ -92,6 +92,18 @@ make update
 make build
 ```
 
+## OpenCode 配置
+
+`config/opencode.jsonc` 使用 V2 配置格式：允许工具操作、禁用 `opencode` 模型供应商，并通过 `agents.title.model` 指定会话标题模型。标题模型必须在所用供应商中真实可用。
+
+Web 界面偏好保存在当前站点的浏览器本地存储中，不支持通过 `opencode.jsonc` 或容器挂载设置。在 Web 的 Settings 中设置：
+
+- **Show agent**：开启。
+- **Tab layout**：选择 **Inbox**。
+- **Language**：选择 **English**，不跟随浏览器语言。
+
+也可以在已打开的 OpenCode Web 页面的开发者工具 Console 中执行 `config/opencode-web-settings.js` 的完整内容，一次性合并这三个选项并刷新页面，保留其他偏好。脚本按 V2.2.5 的客户端存储格式编写，不会由容器自动执行；不同域名、浏览器或浏览器配置文件需要分别设置，升级客户端后应先核对存储格式。
+
 ## Docker 与 SSH
 
 - Docker daemon 由 `docker:28-dind` sidecar 提供，`app` 通过 `DOCKER_HOST=tcp://docker:2375` 连接。
