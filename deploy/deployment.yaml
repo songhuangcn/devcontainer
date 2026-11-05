@@ -21,6 +21,7 @@ metadata:
     app: devcontainer
 spec:
   replicas: 1
+  progressDeadlineSeconds: 1200
   selector:
     matchLabels:
       app: devcontainer
@@ -31,37 +32,97 @@ spec:
       labels:
         app: devcontainer
     spec:
+      # 固定 Pod hostname，而不是让每次滚动更新都换一个随机的 Pod 短 ID。
+      # Pod 内的容器共享同一个 UTS namespace，这个值对 opencode/multica
+      # 都生效；multica 在 MULTICA_DAEMON_DEVICE_NAME 未设置时会读
+      # os.Hostname() 当默认值（已读源码验证：server/internal/daemon/
+      # config.go 的 `deviceName := envOrDefault("MULTICA_DAEMON_DEVICE_NAME",
+      # host)`），固定 hostname 后不用再单独配置。
+      hostname: devcontainer-cloud
       # local-path PV 是节点本地存储，固定调度到磁盘更宽裕的 arm1
       nodeSelector:
         kubernetes.io/hostname: arm1
       # 不用 fsGroup：它会递归放宽整个卷的权限（比如把 .ssh 私钥从 600 改成
-      # 660），导致 ssh 客户端拒绝使用私钥。改用一次性 initContainer 只修 owner，
-      # 不动权限位。
+      # 660），导致 ssh 客户端拒绝使用私钥。这里只处理属主，不动权限位。
       initContainers:
-      - name: fix-ownership
+      - name: setup
         image: busybox:1.36
-        command: ["chown", "-R", "1000:1000", "/mnt/workspace", "/mnt/home-data"]
+        # 与本地 scripts/setup.sh 一样准备持久化目录；集群中的卷由 root
+        # 创建，还需将卷根和这些目录交给镜像内的 ubuntu（1000:1000）。
+        # 配置父目录也处理属主，以兼容已有卷中由旧嵌套挂载创建的目录。
+        command:
+        - sh
+        - -c
+        - |
+          mkdir -p /mnt/workspace/.devcontainer \
+                   /mnt/user-data/.claude \
+                   /mnt/user-data/.codex \
+                   /mnt/user-data/.config/mise \
+                   /mnt/user-data/.config/opencode
+          chown 1000:1000 /mnt/workspace /mnt/workspace/.devcontainer /mnt/user-data \
+            /mnt/user-data/.claude /mnt/user-data/.codex \
+            /mnt/user-data/.config /mnt/user-data/.config/mise /mnt/user-data/.config/opencode
         volumeMounts:
         - name: workspace
           mountPath: /mnt/workspace
-        - name: home-data
-          mountPath: /mnt/home-data
-      containers:
-      - name: app
+        - name: user-data
+          mountPath: /mnt/user-data
+      # 从指定提交安全更新持久化仓库；在线修改保留，冲突时停止部署。
+      - name: sync-runtime
         image: songhuangcn/devcontainer
         imagePullPolicy: Always
-        command: ["opencode"]
-        args: ["web", "--hostname", "0.0.0.0", "--port", "4096"]
-        envFrom:
-        - configMapRef:
-            name: app-configmap
-        - secretRef:
-            name: app-secret
+        env:
+        - name: RUNTIME_REVISION
+          valueFrom:
+            configMapKeyRef:
+              name: runtime-config
+              key: RUNTIME_REVISION
+        args:
+        - bash
+        - /etc/workspace/bootstrap/sync-runtime.sh
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+        # ConfigMap 仅提供引导脚本，不作为工具的运行时配置。
+        - name: runtime-bootstrap
+          mountPath: /etc/workspace/bootstrap
+          readOnly: true
+      # 工具安装到持久化 home，完成后才启动依赖这些 CLI 的应用容器。
+      - <<: &app-base
+          image: songhuangcn/devcontainer
+          imagePullPolicy: Always
+          envFrom:
+          - configMapRef:
+              name: app-configmap
+          - secretRef:
+              name: app-secret
+          volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          # 用户配置和 .agents 链接到持久化工作区，不使用只读 ConfigMap 或单文件挂载。
+          - name: user-data
+            mountPath: /home/ubuntu
+        name: install-tools
+        args: ["bash", "/workspace/.devcontainer/scripts/install.sh"]
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+      containers:
+      # 应用容器共享镜像、环境来源和持久化挂载；命令、探针和资源独立配置。
+      - <<: *app-base
+        name: opencode
+        # 不要加 command：它会覆盖镜像 ENTRYPOINT，首启的 home 初始化就不跑了。
+        # 2.x 去掉了 `opencode web`，Web UI 由 `opencode serve` 一并提供。
+        args: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "-lc", "exec mise exec -- opencode serve --hostname 0.0.0.0 --port 4096"]
         ports:
         - containerPort: 4096
           name: opencode
-        # 注意：设置了 OPENCODE_SERVER_PASSWORD 后 /global/health 也会要求 Basic Auth，
-        # 探针拿不到密码会一直收到 401，所以用 tcpSocket 而不是 httpGet
+        # 2.x 的所有接口（含 /api/info）都要 Basic Auth，httpGet 探针拿不到密码
+        # 只会收到 401，所以用 tcpSocket
         livenessProbe:
           tcpSocket:
             port: 4096
@@ -83,60 +144,32 @@ spec:
           limits:
             memory: "2Gi"
             cpu: "1"
-        volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-        - name: home-data
-          mountPath: /home/ubuntu/.agents
-          subPath: .agents
-        - name: home-data
-          mountPath: /home/ubuntu/.cache
-          subPath: .cache
-        - name: home-data
-          mountPath: /home/ubuntu/.claude
-          subPath: .claude
-        - name: home-data
-          mountPath: /home/ubuntu/.codex
-          subPath: .codex
-        - name: home-data
-          mountPath: /home/ubuntu/.config
-          subPath: .config
-        - name: home-data
-          mountPath: /home/ubuntu/.copilot
-          subPath: .copilot
-        - name: home-data
-          mountPath: /home/ubuntu/.lark-cli
-          subPath: .lark-cli
-        - name: home-data
-          mountPath: /home/ubuntu/.local
-          subPath: .local
-        - name: home-data
-          mountPath: /home/ubuntu/.npm
-          subPath: .npm
-        - name: home-data
-          mountPath: /home/ubuntu/.ssh
-          subPath: .ssh
-        - name: home-data
-          mountPath: /home/ubuntu/.vscode-server
-          subPath: .vscode-server
-        - name: home-data
-          mountPath: /home/ubuntu/.claude.json
-          subPath: .claude.json
-        # 可提交的工具配置由根目录 kustomization 从 config/ 生成。
-        - name: config-data
-          mountPath: /home/ubuntu/.config/opencode/opencode.jsonc
-          subPath: opencode.jsonc
-        - name: config-data
-          mountPath: /home/ubuntu/.gitconfig
-          subPath: .gitconfig
-        - name: config-data
-          mountPath: /home/ubuntu/.claude/settings.json
-          subPath: claude-settings.json
-        - name: config-data
-          mountPath: /home/ubuntu/.codex/config.toml
-          subPath: codex-config.toml
-      # Docker-in-Docker sidecar：和 app 容器共享同一个 Pod network namespace，
-      # app 里通过 DOCKER_HOST=tcp://localhost:2375 连接
+      - <<: *app-base
+        name: multica
+        # 同上，不要加 command。
+        args: ["bash", "/workspace/.devcontainer/scripts/start.sh", "bash", "-lc", "exec mise exec -- bash /workspace/.devcontainer/scripts/start-multica.sh"]
+        env:
+        - name: DOCKER_HOST
+          value: tcp://localhost:2375
+        # Pod 名会随滚动更新变化；固定 daemon 身份才能复用已绑定 agent 的 runtime。
+        - name: MULTICA_DAEMON_ID
+          value: 019fff1d-364f-7279-83a7-d79613c153ac
+        livenessProbe:
+          exec:
+            command: ["/home/ubuntu/.local/bin/multica", "daemon", "status", "--output", "json"]
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "50m"
+          limits:
+            memory: "1Gi"
+            cpu: "1"
+      # Docker-in-Docker sidecar：与应用容器共享同一个 Pod network namespace，
+      # opencode 和 multica 通过 DOCKER_HOST=tcp://localhost:2375 连接
       - name: dind
         image: docker:28-dind
         securityContext:
@@ -158,12 +191,12 @@ spec:
       - name: workspace
         persistentVolumeClaim:
           claimName: workspace-pvc
-      - name: home-data
+      - name: user-data
         persistentVolumeClaim:
-          claimName: home-data-pvc
-      - name: config-data
+          claimName: user-data-pvc
+      - name: runtime-bootstrap
         configMap:
-          name: config-data
+          name: runtime-config
       - name: docker-data
         persistentVolumeClaim:
           claimName: docker-data-pvc
