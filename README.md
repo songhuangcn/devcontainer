@@ -63,6 +63,8 @@ OpenCode 和 Multica 服务通过 login shell 执行 `mise exec -- …`，使用
 
 本地修改 `agents/skills` 会直接对所有应用容器生效。配置与 skills 的写回只修改工作树，不自动提交或推送；需要同步到其他环境时自行检查 diff、提交并推送，避免将凭据纳入版本控制。挂载配置变化后需重建容器才能生效。
 
+飞书 Skills 使用官方 `suite` 聚合布局：`agents/skills/lark-suite/SKILL.md` 是唯一入口，各业务说明位于其 `references/<能力名>/GUIDE.md`，按需读取。更新统一运行 `lark-cli update --skills-layout suite`，避免将各业务重新安装为顶层独立 Skills。`agents/.skill-lock.json` 保留在 Git 中，由安装器维护来源与更新信息；登录凭据保存在持久化 home 中，不进入仓库。
+
 启动容器、OpenCode Web 和 Multica daemon：
 
 ```bash
