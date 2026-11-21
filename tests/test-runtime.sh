@@ -135,7 +135,7 @@ chmod +x "${HOME}/.local/bin/mise"
 INSTALLER
     ;;
   */multica-cli-*.tar.gz) cp "${TEST_FIXTURES}/multica.tar.gz" "${output}" ;;
-  */checksums.txt) printf '%064d  multica-cli-0.6.1-linux-%s.tar.gz\n' 0 "$(dpkg --print-architecture)" > "${output}" ;;
+  */checksums.txt) printf '%064d  multica-cli-0.11.1-linux-%s.tar.gz\n' 0 "$(dpkg --print-architecture)" > "${output}" ;;
   */autoteam-launcher) printf '#!/bin/sh\nexit 0\n' > "${output}" ;;
   *) exit 1 ;;
 esac
@@ -174,7 +174,7 @@ cat > "${TEST_FIXTURES}/multica" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 case "$1" in
-  version) printf 'multica version 0.6.1\n' ;;
+  version) printf 'multica version 0.11.1\n' ;;
   auth) test "${TEST_AUTHENTICATED:-0}" = 1 ;;
   login) printf 'login\n' >> "${TEST_LOG}" ;;
   daemon) printf 'daemon\n' >> "${TEST_LOG}" ;;
