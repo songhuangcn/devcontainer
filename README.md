@@ -113,7 +113,7 @@ Web 界面偏好保存在当前站点的浏览器本地存储中，不支持通�
 - **Tab layout**：选择 **Inbox**。
 - **Language**：选择 **English**，不跟随浏览器语言。
 
-也可以在已打开的 OpenCode Web 页面的开发者工具 Console 中执行 `config/opencode-web-settings.js` 的完整内容，一次性合并这三个选项并刷新页面，保留其他偏好。脚本按 V2.2.5 的客户端存储格式编写，不会由容器自动执行；不同域名、浏览器或浏览器配置文件需要分别设置，升级客户端后应先核对存储格式。
+也可以在已打开的 OpenCode Web 页面的开发者工具 Console 中执行 `config/opencode-web-settings.js` 的完整内容，一次性合并这三个选项并刷新页面，保留其他偏好。脚本使用 V2.3.2 的客户端存储格式，不会由容器自动执行；不同域名、浏览器或浏览器配置文件需要分别设置，升级客户端后应先核对存储格式。
 
 `install.sh` 安装的是 OpenCode 2.x。2.x 只发布到 npm 的 `@opencode/cli`（GitHub 上只有 tag 没有 release），所以 `config/mise.toml` 里写的是 `"npm:@opencode/cli"`，不是 mise 内置的 `opencode`（后者走 GitHub release，只能装到 1.x）。这个包靠 postinstall 从平台包里拷出真正的二进制，而 mise 默认不跑依赖的安装脚本，所以要用 `allow_builds` 放行，否则装出来的 `opencode` 一运行就报 postinstall 没执行。
 
@@ -123,11 +123,11 @@ Web 界面偏好保存在当前站点的浏览器本地存储中，不支持通�
 - **关掉常驻后台服务**：2.x 的 `opencode run`、TUI 等命令默认连一个常驻后台服务（`opencode serve --service`，监听 `127.0.0.1:49374`），找不到就拉起一个，靠 `~/.local/state/opencode/service.json` 发现彼此。这里两个应用容器共享同一个 home 和同一个 `opencode.db`，这套机制会出两个问题：compose 下各容器网络隔离，A 容器注册的 `127.0.0.1` 在 B 容器里连不上，B 会另起一个并覆盖注册文件，A 的服务发现自己被替换就退出，正在跑的 Multica 任务跟着断掉；后台服务启动时还会把库里「执行中但不属于自己」的会话当成崩溃遗留接着跑，而它分不出这些会话其实正在 `opencode` 容器的 `serve` 里跑着。所以 `config/opencode-service.json` 写了 `{"disabled": true}`，链接到 `~/.config/opencode/service.json`：每次 `opencode run`/TUI 都自带一个私有子进程服务器，进程模型和 1.x 一样，也不会去接管别的会话。代价是每次 `run` 多一次服务器启动（实测约 0.4 秒），且不能使用依赖共享后台服务的配对功能。此配置可写，但应保持后台服务禁用，避免共享 home 的服务发现冲突。
 - **会话数据**：2.x 和 1.x 共用 `~/.local/share/opencode/opencode.db`，首次启动会在后台把 1.x 的会话迁移到同一个库里的新表，旧表保留（本地 2.3G、511 个会话的库约 15 秒迁完，期间 Web UI 可用）。升级前先停容器再备份 `data/.local/share/opencode/opencode.db*`（包括 WAL 文件），回退时用得上。
 - **配置**：`config/opencode.jsonc` 使用原生 V2 的 `permissions`、`agents.title.model` 和 `policies`，并保留定时任务开关。
-- **Multica**：当前固定的 Multica 0.6.1 会按 `opencode --version` 识别 2.x 并切换参数（`--dir`、`--variant` 在 2.x 里被移除）。但 2.x 只能从任务工作目录里的 `opencode.json` 读 MCP 配置，Multica 不愿把凭据写进 agent 可能 `git add` 的目录，所以**带 MCP server 的任务会被直接拒绝**（报错里会写明原因）；这类 agent 要么去掉 MCP，要么换成别的 runtime。
+- **Multica**：内置的 OpenCode 2.x runtime 默认通过 ACP 启动会话，并通过 ACP 传入 Multica 管理的 MCP server，不向任务目录写入凭据。若使用 `opencode run` 模式，Multica 仍会拒绝带有这类 MCP server 的任务，以免把凭据写入可能被提交的工作目录。
 
 ## Multica daemon
 
-`install.sh` 从 Multica 官方 release 安装固定 CLI 版本（当前为 0.6.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
+`install.sh` 从 Multica 官方 release 安装固定 CLI 版本（当前为 0.11.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
 
 ```bash
 make setup

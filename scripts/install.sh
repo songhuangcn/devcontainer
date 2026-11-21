@@ -37,7 +37,7 @@ mise exec -- python -m pip install --no-cache-dir \
 ln -sf "$(mise which docker-compose)" "${HOME}/.docker/cli-plugins/docker-compose"
 
 # 不在 mise registry 中的工具独立安装到用户默认 bin，校验后才替换已有文件。
-MULTICA_VERSION=0.6.1
+MULTICA_VERSION=0.11.1
 archive="multica-cli-${MULTICA_VERSION}-linux-$(dpkg --print-architecture).tar.gz"
 curl -fsSL --retry 3 "https://github.com/multica-ai/multica/releases/download/v${MULTICA_VERSION}/${archive}" -o "${archive}"
 curl -fsSL --retry 3 "https://github.com/multica-ai/multica/releases/download/v${MULTICA_VERSION}/checksums.txt" -o checksums.txt

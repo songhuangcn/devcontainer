@@ -9,7 +9,7 @@
     return value;
   }
 
-  // OpenCode V2.2.5 的 Web 存储键；升级后应先核对客户端实现。
+  // OpenCode V2.3.2 的 Web 存储键；升级后应先核对客户端实现。
   const settings = readObject("settings.v3");
   const language = readObject("opencode.global.dat:language");
   settings.general = { ...settings.general, showCustomAgents: true };
