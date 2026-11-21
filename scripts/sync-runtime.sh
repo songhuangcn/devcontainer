@@ -43,7 +43,7 @@ if [ -n "${current}" ] && [ "${current}" != "${target}" ]; then
     exit 1
   fi
 fi
-if ! git -C "${directory}" checkout --detach "${target}"; then
+if ! git -C "${directory}" checkout --detach --no-overwrite-ignore "${target}"; then
   printf 'Runtime update stopped. Local changes were preserved in %s; resolve checkout conflicts before retrying.\n' "${directory}" >&2
   exit 1
 fi

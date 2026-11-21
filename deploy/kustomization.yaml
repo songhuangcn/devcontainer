@@ -7,13 +7,19 @@ resources:
 - app-sealed-secret.yaml
 - pvc.yaml
 - deployment.yaml
+- runtime-setup.yaml
 - ingress.yaml
+configurations:
+- kustomizeconfig.yaml
 configMapGenerator:
 - name: runtime-config
   files:
   - sync-runtime.sh=../scripts/sync-runtime.sh
   literals:
-  - RUNTIME_REVISION=main
+  - RUNTIME_REVISION=__RUNTIME_REVISION__
+  options:
+    labels:
+      devcontainer.hdgcs.com/deploy-phase: setup-input
 images:
 - name: songhuangcn/devcontainer
   newTag: latest

@@ -134,9 +134,11 @@ destroy:
 # ==== k3s 部署（deploy/ 目录，参考 yangcheng-team/eastar-price 的 deploy 目录风格） ====
 # 需要本地 kubectl 已经指向目标集群（oracle-arm1），且已安装 kubeseal。
 
+RUNTIME_REVISION ?= $(shell git rev-parse HEAD)
+
 .PHONY: deploy.setup
-deploy.setup: # 把当前 kubectl context 切到 devcontainer 命名空间
-	kubectl config set-context --current --namespace=devcontainer
+deploy.setup: # 在替换应用 Pod 之前，准备持久化工作区
+	$(MAKE) --no-print-directory deploy.config | bash scripts/deploy-setup.sh
 
 .PHONY: deploy.encode
 deploy.encode: # 把明文 deploy/app-secret.yaml 加密成 deploy/app-sealed-secret.yaml
@@ -144,14 +146,14 @@ deploy.encode: # 把明文 deploy/app-secret.yaml 加密成 deploy/app-sealed-se
 
 .PHONY: deploy.config
 deploy.config: # 本地预览 kustomize 渲染结果，不实际 apply
-	kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone
+	@set -e; revision='$(RUNTIME_REVISION)'; \
+	[[ "$$revision" =~ ^[0-9a-f]{40}$$ ]]; \
+	kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone | \
+	  sed -E "s/(runtime-config-[a-z0-9]{10})([^a-z0-9-]|$$)/\1-$${revision:0:12}\2/g; s/__RUNTIME_REVISION__/$$revision/g"
 
 .PHONY: deploy.apply
-deploy.apply: # 应用 deploy/ 到集群
-	kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone | kubectl apply -f -
-	# apply 不会删除已移出清单的资源，显式关闭遗留的 SSH 入口。
-	kubectl delete service app-ssh -n devcontainer --ignore-not-found
-	kubectl rollout status deployment/app -n devcontainer --timeout=20m
+deploy.apply: # 准备成功后才更新应用
+	$(MAKE) --no-print-directory deploy.config | bash scripts/deploy-setup.sh --apply
 
 .PHONY: deploy.status
 deploy.status: # 查看当前部署状态

@@ -31,6 +31,8 @@ spec:
     metadata:
       labels:
         app: devcontainer
+      annotations:
+        devcontainer.hdgcs.com/runtime-config: runtime-config
     spec:
       # 固定 Pod hostname，而不是让每次滚动更新都换一个随机的 Pod 短 ID。
       # Pod 内的容器共享同一个 UTS namespace，这个值对 opencode/multica
@@ -54,39 +56,16 @@ spec:
         - sh
         - -c
         - |
-          mkdir -p /mnt/workspace/.devcontainer \
-                   /mnt/user-data/.claude \
+          mkdir -p /mnt/user-data/.claude \
                    /mnt/user-data/.codex \
                    /mnt/user-data/.config/mise \
                    /mnt/user-data/.config/opencode
-          chown 1000:1000 /mnt/workspace /mnt/workspace/.devcontainer /mnt/user-data \
+          chown 1000:1000 /mnt/user-data \
             /mnt/user-data/.claude /mnt/user-data/.codex \
             /mnt/user-data/.config /mnt/user-data/.config/mise /mnt/user-data/.config/opencode
         volumeMounts:
-        - name: workspace
-          mountPath: /mnt/workspace
         - name: user-data
           mountPath: /mnt/user-data
-      # 从指定提交安全更新持久化仓库；在线修改保留，冲突时停止部署。
-      - name: sync-runtime
-        image: songhuangcn/devcontainer
-        imagePullPolicy: Always
-        env:
-        - name: RUNTIME_REVISION
-          valueFrom:
-            configMapKeyRef:
-              name: runtime-config
-              key: RUNTIME_REVISION
-        args:
-        - bash
-        - /etc/workspace/bootstrap/sync-runtime.sh
-        volumeMounts:
-        - name: workspace
-          mountPath: /workspace
-        # ConfigMap 仅提供引导脚本，不作为工具的运行时配置。
-        - name: runtime-bootstrap
-          mountPath: /etc/workspace/bootstrap
-          readOnly: true
       # 工具安装到持久化 home，完成后才启动依赖这些 CLI 的应用容器。
       - <<: &app-base
           image: songhuangcn/devcontainer
@@ -194,9 +173,6 @@ spec:
       - name: user-data
         persistentVolumeClaim:
           claimName: user-data-pvc
-      - name: runtime-bootstrap
-        configMap:
-          name: runtime-config
       - name: docker-data
         persistentVolumeClaim:
           claimName: docker-data-pvc

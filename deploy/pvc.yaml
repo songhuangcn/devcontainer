@@ -4,6 +4,7 @@ metadata:
   name: workspace-pvc
   labels:
     app: devcontainer
+    devcontainer.hdgcs.com/deploy-phase: setup-input
 spec:
   storageClassName: local-path
   accessModes:

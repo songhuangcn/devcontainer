@@ -1,0 +1,6 @@
+nameReference:
+- kind: ConfigMap
+  version: v1
+  fieldSpecs:
+  - kind: Deployment
+    path: spec/template/metadata/annotations/devcontainer.hdgcs.com\/runtime-config

@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: runtime-setup
+  labels:
+    devcontainer.hdgcs.com/deploy-phase: setup
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 300
+  automountServiceAccountToken: false
+  nodeSelector:
+    kubernetes.io/hostname: arm1
+  initContainers:
+  - name: prepare-workspace
+    image: busybox:1.36
+    command: ["sh", "-ec", "mkdir -p /mnt/workspace/.devcontainer; chown 1000:1000 /mnt/workspace /mnt/workspace/.devcontainer"]
+    volumeMounts:
+    - name: workspace
+      mountPath: /mnt/workspace
+  containers:
+  - name: sync-runtime
+    image: songhuangcn/devcontainer
+    imagePullPolicy: Always
+    env:
+    - name: RUNTIME_REVISION
+      valueFrom:
+        configMapKeyRef:
+          name: runtime-config
+          key: RUNTIME_REVISION
+    args: ["bash", "/etc/workspace/bootstrap/sync-runtime.sh"]
+    volumeMounts:
+    - name: workspace
+      mountPath: /workspace
+    - name: runtime-bootstrap
+      mountPath: /etc/workspace/bootstrap
+      readOnly: true
+  volumes:
+  - name: workspace
+    persistentVolumeClaim:
+      claimName: workspace-pvc
+  - name: runtime-bootstrap
+    configMap:
+      name: runtime-config

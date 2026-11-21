@@ -282,4 +282,5 @@ if env -u MULTICA_TOKEN bash "${ROOT_DIR}/scripts/start-multica.sh"; then
   exit 1
 fi
 bash "${SCRIPT_DIR}/test-sync-runtime.sh"
+bash "${SCRIPT_DIR}/test-deploy-setup.sh"
 printf 'Runtime script tests passed.\n'

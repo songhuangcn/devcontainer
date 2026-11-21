@@ -171,11 +171,10 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 - 只有单一环境，不做 stg/prod 分层；所有部署配置都在 `deploy/`，入口是 `deploy/kustomization.yaml`。
 - 存储：`workspace-pvc`（15Gi）、`user-data-pvc`（20Gi，整个挂成 `/home/ubuntu`，包含运行时安装的工具）、`docker-data-pvc`（15Gi，供 dind sidecar 用）。三者都用 `local-path` storageClass 并通过 `nodeSelector` 固定调度到 `arm1`。`local-path` 不支持事后扩容；工具下载和安装缓存也占用 home 卷空间，需留意容量。
 - **待办（2026-09-20 之后）**：旧的 `home-data-pvc`（8Gi）在切到整挂 home 时原封不动留着当退路，新卷跑稳几周后从 `deploy/pvc.yaml` 删掉并 `kubectl delete pvc home-data-pvc`。顺带还有一个更早遗留的 `openclaw-data-pvc` 可以一起回收。
-- 配置：工具配置直接来自持久化仓库，通过与 Compose 相同的用户软链读写，不挂载只读 ConfigMap。`runtime-config` ConfigMap 仅携带仓库提交和获取仓库前需要的引导脚本，内容哈希变化触发 Pod 更新。渲染使用 `kubectl kustomize deploy/ --load-restrictor LoadRestrictionsNone`，再交给 `kubectl apply -f -`，统一封装在 Makefile 中。
-- 运行时仓库：`sync-runtime` initContainer 将公开仓库检出到 `workspace-pvc` 中的 `/workspace/.devcontainer`，应用直接使用同一份可写仓库，无额外 runtime 卷。配置、skills、脚本和 Git 工作树随 PVC 保留，Pod 重建不会丢失在线修改。已有非仓库目录或来源不匹配的仓库不会被接管。CI 将 `RUNTIME_REVISION` 固定为本次提交的完整 SHA；手工部署默认使用 `main`，也可指定已经推送的提交。
-- 仓库更新：使用非强制 Git checkout；未提交改动与目标提交不冲突时保留，冲突或存在未被目标版本包含的本地提交时停止在 `sync-runtime`，保留工作树供人工处理，不清理或隐式 stash。旧 HEAD 会保存到 `refs/workspace/saved-heads/<完整 SHA>`，避免 detached HEAD 上的用户提交失去引用。部署前应检查生产仓库的修改并按需提交、推送；冲突后需用挂载同一 PVC 的维护 Pod 处理，再重试部署。
-- 目录准备：`setup` initContainer 预建仓库和用户配置父目录，将指定目录属主设置为 `1000:1000`，包括已有卷中由嵌套挂载创建的父目录。不递归修改文件权限，保留 SSH 私钥等敏感文件的权限。
-- 工具安装：`setup` 准备目录后，`sync-runtime` 更新仓库，`install-tools` 执行 `scripts/install.sh`，由安装脚本调用 `start.sh` 准备用户链接，完成后才启动应用，无需手工执行 `make install`。首次部署需要联网获取仓库、下载工具；后续复用 home 中的安装和仓库中的版本配置。等待超时为 20 分钟，失败时查看对应 initContainer 的日志。
+- 配置：工具配置直接来自持久化仓库，通过与 Compose 相同的用户软链读写。`runtime-config` ConfigMap 仅供部署准备使用；其版本化名称写入应用 Pod 模板，确保新提交触发 rollout。
+- 运行时仓库：每次发布先通过临时 `runtime-setup` Pod，把指定提交检出到 `workspace-pvc` 中的 `/workspace/.devcontainer`；准备成功才更新应用 Deployment。普通 Pod 重建直接读取卷里的工作区，不拉 Git、不切提交。CI 使用本次提交的完整 SHA；手工部署默认使用本地 HEAD，也可以通过 `RUNTIME_REVISION` 指定已推送的完整 SHA。
+- 仓库更新：已有非仓库目录或不同来源的仓库不会被接管。非强制 Git checkout 保留不冲突的在线改动；有冲突或未集成的本地提交时，准备失败，不替换应用 Pod，也不清理或隐式 stash。旧 HEAD 通过 `refs/workspace/saved-heads/<完整 SHA>` 保留。云端目录仍可写：工具热加载的配置可能立即生效；启动脚本、安装版本和镜像等改动不一定立即生效，正式发布应提交并推送，由 CI 更新。排查冲突后重试 `make deploy.apply`。
+- 目录和工具：临时准备 Pod 初始化工作区目录；应用的 `setup` initContainer 准备用户配置目录，不递归修改权限。`install-tools` 执行卷里的 `scripts/install.sh` 安装工具，再启动应用。准备阶段最长 5 分钟，应用 rollout 最长 20 分钟。
 - 工具解析：应用通过 `mise exec` 获取真实 provider PATH，避免 Multica 把 Codex 等误启动成 mise task runner；用 `make agent-cli.smoke` 在空白目录复验。
 - 用户文件初始化：所有应用容器只写 `args:`，不写会覆盖 ENTRYPOINT 的 `command:`。镜像的 `entrypoint.sh` 从 `/etc/skel` 补齐默认用户文件，运行时的 `start.sh` 准备配置与指令链接，再执行应用命令；修改链接逻辑不需要重建镜像。
 - 鉴权：`opencode serve` 使用 Sealed Secret 中的 `OPENCODE_SERVER_PASSWORD`：Web UI 在自带登录页选 Use password 输入，API 客户端走 HTTP Basic Auth（用户名固定为 `opencode`）。Multica 首次启动时使用同一 Secret 中的 `MULTICA_TOKEN` 自动登录，登录态持久化到 `user-data-pvc`。Secret 明文不在仓库里。
@@ -187,8 +186,9 @@ VS Code 可以继续通过 `devcontainer.json` 快速打开工作区。这个文
 手动操作（需要本地 `kubectl` 已指向该集群、并安装 `kubeseal`）：
 
 ```bash
-make deploy.config   # 预览 deploy/ 的 kustomize 渲染结果
-make deploy.apply    # 渲染 deploy/、apply 并等待 rollout
+make deploy.config   # 预览完整的部署清单
+make deploy.setup    # 只准备工作区，不替换应用 Pod
+make deploy.apply    # 先准备工作区，再更新应用并等待 rollout
 make deploy.status   # 查看 Pod/Service/Ingress/PVC
 make deploy.logs     # 查看 opencode 容器日志
 make deploy.bash     # 进入集群里的 opencode 容器

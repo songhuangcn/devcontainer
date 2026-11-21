@@ -87,6 +87,9 @@ jobs:
   deploy:
     runs-on: ubuntu-24.04
     needs: build
+    concurrency:
+      group: devcontainer-k3s-deploy
+      cancel-in-progress: false
 
     steps:
       - name: Checkout repository
@@ -98,12 +101,13 @@ jobs:
           method: kubeconfig
           kubeconfig: ${{ secrets.KUBECONFIG }}
 
-      - name: Select base image and runtime revision
+      - name: Select base image
         run: |
           sed -i "s|newTag: .*|newTag: \"${{ needs.build.outputs.image_tag }}\"|g" deploy/kustomization.yaml
-          sed -i "s|RUNTIME_REVISION=.*|RUNTIME_REVISION=${GITHUB_SHA}|" deploy/kustomization.yaml
 
-      - name: Deploy to Kubernetes
+      - name: Prepare runtime and deploy to Kubernetes
+        env:
+          RUNTIME_REVISION: ${{ github.sha }}
         run: |
           make deploy.apply
 
