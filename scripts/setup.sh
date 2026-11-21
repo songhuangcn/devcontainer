@@ -6,13 +6,9 @@ ROOT_DIR="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 DATA_DIR="${ROOT_DIR}/data"
 ENV_FILE="${ROOT_DIR}/.env"
-ENV_SAMPLE="${ROOT_DIR}/.env.sample"
-
-if [ -f "${ENV_FILE}" ]; then
-  printf '[setup] .env already exists; keep existing file.\n'
-else
-  cp "${ENV_SAMPLE}" "${ENV_FILE}"
-  printf '[setup] created .env from .env.sample.\n'
+if [ ! -f "${ENV_FILE}" ] || [ ! -r "${ENV_FILE}" ]; then
+  printf '[setup] 缺少可读的 .env，请先参考 .env.sample 手动配置。\n' >&2
+  exit 1
 fi
 
 # 在宿主机创建 home 卷根，避免 Docker daemon 以 root 身份创建它。

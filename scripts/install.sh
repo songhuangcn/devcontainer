@@ -1,9 +1,18 @@
 #!/usr/bin/env bash
-# 启动后安装工具；所有产物留在共享 home 中，可独立重复执行。
+# 在容器内安装工具；所有产物留在共享 home 中，可独立重复执行。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="${HOME}/.local/bin:${PATH}"
+
+# Compose 已加载 .env；本地首次 setup 检查启动所需配置，不影响 k3s 的安装。
+if [ "${1:-}" = --local-setup ]; then
+  : "${OPENCODE_SERVER_PASSWORD:?请在 .env 中配置 OPENCODE_SERVER_PASSWORD}"
+  if [ -z "${MULTICA_TOKEN:-}" ] && ! multica auth status >/dev/null 2>&1; then
+    printf '[setup] Multica 尚未登录，请在 .env 中配置 MULTICA_TOKEN。\n' >&2
+    exit 1
+  fi
+fi
 
 mkdir -p "${HOME}/.cache" "${HOME}/.local/bin" \
   "${HOME}/.docker/cli-plugins" "${HOME}/.claude"
