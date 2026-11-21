@@ -1,6 +1,7 @@
 export COMPOSE_PROJECT_NAME = workspace-devcontainer
 
 COMPOSE = docker compose -f docker-compose.yml
+INSTALL_TOOLS = $(COMPOSE) run --rm --no-deps --pull never -T opencode bash /workspace/.devcontainer/scripts/install.sh
 SHELL = /bin/bash
 .SHELLFLAGS = -eu -o pipefail -c
 
@@ -15,9 +16,7 @@ check: ## 脚本/Dockerfile 检查、Compose/Kustomize 校验、运行时脚本�
 		echo "shellcheck $$f"; \
 		docker run --rm -i $(SHELLCHECK_IMAGE) - < "$$f"; \
 	done
-	@# docker-compose.yml 引用了 .env，缺失时用示例文件占位（.env 已在 .gitignore）
-	@[ -f .env ] || cp .env.sample .env
-	$(COMPOSE) config -q
+	WORKSPACE_COMPOSE_ENV_FILE=.env.sample $(COMPOSE) --env-file .env.sample config -q
 	docker run --rm -i $(HADOLINT_IMAGE) hadolint --failure-threshold error - < Dockerfile
 	$(MAKE) test
 	$(MAKE) deploy.config > /dev/null
@@ -27,12 +26,18 @@ deploy: ## 等本次提交的主镜像构建与部署成功
 	bash scripts/wait-build.sh "$$(git rev-parse HEAD)"
 
 .PHONY: setup
-setup:
+setup: prepare-local ## 构建应用镜像、准备 Docker 镜像并安装工具，不启动服务
+	$(MAKE) build
+	$(COMPOSE) pull --policy missing docker
+	$(INSTALL_TOOLS) --local-setup
+
+.PHONY: prepare-local
+prepare-local:
 	bash scripts/setup.sh
 
 .PHONY: install
-install: setup ## 用一次性容器安装/更新用户工具，无需先启动应用服务
-	$(COMPOSE) run --rm --no-deps -T opencode bash /workspace/.devcontainer/scripts/install.sh
+install: prepare-local ## 仅安装/更新用户工具，不重新构建镜像
+	$(INSTALL_TOOLS)
 
 .PHONY: test
 test: ## 在主镜像中验证入口、安装脚本和安装命令编排（不下载工具、不接触真实 data）
@@ -54,7 +59,7 @@ run:
 
 .PHONY: start
 start:
-	$(COMPOSE) up -d --remove-orphans
+	$(COMPOSE) up -d --no-build --pull never --remove-orphans
 
 .PHONY: start-opencode
 start-opencode: restart-opencode

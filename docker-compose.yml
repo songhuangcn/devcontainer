@@ -1,7 +1,7 @@
 name: workspace-devcontainer
 
 x-app-base: &app-base
-  # 默认拉取预构建镜像；改 Dockerfile 后用 `make build` 本地构建同名镜像。
+  # `make setup` 本地构建该标签；`make update` 拉取已发布的镜像。
   image: ${IMAGE_NAME:-songhuangcn/devcontainer}:${IMAGE_TAG:-latest}
   build: .
   # 固定 hostname，而不是让每个容器各拿一个随机的 Docker 短 ID。opencode/
@@ -11,7 +11,7 @@ x-app-base: &app-base
   # "MULTICA_DAEMON_DEVICE_NAME", host)`），固定 hostname 后不用再单独配置。
   hostname: devcontainer-local
   env_file:
-    - .env
+    - ${WORKSPACE_COMPOSE_ENV_FILE:-.env}
   environment:
     DOCKER_HOST: tcp://docker:2375
   init: true

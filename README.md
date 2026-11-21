@@ -7,7 +7,7 @@
 - `docker-compose.yml`：用共享 base 配置分别启动 `opencode`、`multica`，并提供 Docker-in-Docker service `docker`。
 - `Dockerfile`：只构建一个基础镜像，包含系统开发依赖、字体和论文输出工具链，仅复制 `entrypoint.sh`。
 - `devcontainer.json`：仅作为 VS Code 快速打开入口（指向 `opencode` service），不再使用 devcontainer features。
-- `scripts/setup.sh`：创建 `.env` 和持久化 home 目录 `./data`。
+- `scripts/setup.sh`：检查手动配置的 `.env`，准备持久化 home 目录 `./data`。
 - `scripts/entrypoint.sh`：从 `/etc/skel` 补齐缺失的默认用户文件，然后执行容器命令。
 - `scripts/start.sh`：将用户配置、指令和 skills 链接到可写仓库，再执行应用命令；无参数时只准备配置。
 - `scripts/sync-runtime.sh`：生产 Pod 启动前更新持久化仓库，保留本地修改，遇到冲突停止。
@@ -24,11 +24,11 @@ CI 只发布主镜像：
 
 `songhuangcn/devcontainer` 虽然保留原名称，但现在是纯 Docker 镜像，不依赖 devcontainer feature，包含 LaTeX/PDF、CJK 字体和 PDF 检查工具；Pandoc 等 mise 工具在启动后安装。
 
-mise、OpenCode、Claude、Codex、Node、Python、GitHub CLI、Docker CLI、Compose plugin、Multica、Autoteam 等都由 `make install` 安装到用户 home。配置、安装脚本和 skills 不进入镜像，修改它们无需重新构建基础镜像。
+mise、OpenCode、Claude、Codex、Node、Python、GitHub CLI、Docker CLI、Compose plugin、Multica、Autoteam 等都由 `make setup` 安装到用户 home。配置、安装脚本和 skills 不进入镜像，修改它们无需重新构建基础镜像。
 
 ## 前置依赖
 
-只需要 Docker 和 Docker Compose：
+需要 `make`、Docker 和 Docker Compose：
 
 ```bash
 docker --version
@@ -39,17 +39,16 @@ docker compose version
 
 ## 本地使用
 
-首次使用先准备配置、安装工具，再启动服务：
+首次使用，先参考 `.env.sample` 手动创建并编辑 `.env`：填写 `OPENCODE_SERVER_PASSWORD`，没有持久化 Multica 登录态时还需填写 `MULTICA_TOKEN`。不要提交 `.env`。然后运行：
 
 ```bash
 make setup
-make install
 make start
 ```
 
-`make setup` 会在缺失时从 `.env.sample` 创建 `.env`，并预建 `./data`，避免 Docker daemon 以 root 身份创建 home 卷根。启动服务前填写 `.env` 中的 `OPENCODE_SERVER_PASSWORD` 和 `MULTICA_TOKEN`。
+`make setup` 要求 `.env` 已存在，不会生成或覆盖它。它预建 `./data`，在本地构建 OpenCode 和 Multica 共用的应用镜像，准备 Docker-in-Docker 镜像，再用一次性容器检查启动配置并安装工具。它不会启动常驻服务；成功后直接 `make start`，无需再构建、拉取镜像或安装工具。
 
-`make install` 通过 `docker compose run --rm --no-deps -T opencode bash /workspace/.devcontainer/scripts/install.sh` 在一次性容器中安装工具，不启动应用服务或 Docker-in-Docker。仓库随工作区挂载到 `/workspace/.devcontainer`，脚本直接使用这一路径，无需额外挂载；修改脚本后可直接重跑，不需要先启动 OpenCode 或 Multica。脚本准备用户配置链接、串行安装工具，并建立 Compose plugin 入口。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。
+安装脚本通过工作区挂载路径 `/workspace/.devcontainer/scripts/install.sh` 执行。脚本准备用户配置链接、串行安装工具，并建立 Compose plugin 入口。Multica 和 Autoteam 启动器固定版本/提交，校验 SHA-256 后才替换已有文件。只想重装工具时，可用 `make install` 复用已有应用镜像，不需要先启动服务。
 
 `docker-compose.yml` 只挂载工作区和整个 home。`start.sh` 在应用启动前将 Git、Claude、Codex、mise、OpenCode 的配置链接到仓库的 `config/`，将 `~/.agents` 链接到仓库的 `agents/`；不使用只读配置或单文件挂载。容器内修改配置会直接写回工作树，宿主机编辑仓库文件也立即可见。已有配置和指令会先保留为同名的 `.before-workspace-link`；Claude 的 `CLAUDE.md` 和 `skills` 使用 `.before-agents-link`。备份已存在时拒绝覆盖。默认用户文件从 `/etc/skel` 补齐，已有 `.bashrc`、`.profile` 永远不会被覆盖。
 
@@ -127,15 +126,9 @@ Web 界面偏好保存在当前站点的浏览器本地存储中，不支持通�
 
 ## Multica daemon
 
-`install.sh` 从 Multica 官方 release 安装固定 CLI 版本（当前为 0.11.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次启动时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录：
+`install.sh` 从 Multica 官方 release 安装固定 CLI 版本（当前为 0.11.1），并校验 checksums.txt；daemon 在独立的 `multica` service 中以前台模式运行。首次 `make start` 时，如果持久化目录中还没有登录态，会使用 `.env` 中的 `MULTICA_TOKEN` 自动登录。
 
-```bash
-make setup
-make install
-make start
-```
-
-请先从 `.env.sample` 复制 `.env` 并填写 `MULTICA_TOKEN`。登录态保存在 `./data/.multica`，任务目录保存在 `./data/multica_workspaces`；不要提交 `.env`。`docker-compose.yml` 固定了官方支持的 `MULTICA_DAEMON_ID`（复用已有 agent 绑定的 runtime 身份）以及所有应用容器的 `hostname: devcontainer-local`（避免容器重建后显示随机 hostname）。Multica 的 device name 不单独设置——`MULTICA_DAEMON_DEVICE_NAME` 未配置时会读容器 hostname 当默认值，固定 hostname 后自然拿到 `devcontainer-local`。只有部署完全独立的另一套本地实例时才需要在 `.env` 中把 `MULTICA_DAEMON_ID` 覆盖成新的 UUID。常用命令：
+登录态保存在 `./data/.multica`，任务目录保存在 `./data/multica_workspaces`。`docker-compose.yml` 固定了官方支持的 `MULTICA_DAEMON_ID`（复用已有 agent 绑定的 runtime 身份）以及所有应用容器的 `hostname: devcontainer-local`（避免容器重建后显示随机 hostname）。Multica 的 device name 不单独设置——`MULTICA_DAEMON_DEVICE_NAME` 未配置时会读容器 hostname 当默认值，固定 hostname 后自然拿到 `devcontainer-local`。只有部署完全独立的另一套本地实例时才需要在 `.env` 中把 `MULTICA_DAEMON_ID` 覆盖成新的 UUID。常用命令：
 
 ```bash
 make multica.status

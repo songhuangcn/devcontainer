@@ -14,21 +14,6 @@ chmod 700 "${HOME}"
 setup_root="${root}/workspace/.devcontainer"
 mkdir -p "${setup_root}/scripts"
 cp "${ROOT_DIR}/scripts/setup.sh" "${setup_root}/scripts/setup.sh"
-printf 'TEST_SETTING=default\n' > "${setup_root}/.env.sample"
-bash "${setup_root}/scripts/setup.sh"
-cmp "${setup_root}/.env.sample" "${setup_root}/.env"
-test -d "${setup_root}/data"
-test -w "${setup_root}/data"
-test "$(stat -c %u "${setup_root}/data")" = "$(id -u)"
-printf 'TEST_SETTING=custom\n' > "${setup_root}/.env"
-printf 'user data\n' > "${setup_root}/data/existing"
-chmod 700 "${setup_root}/data"
-bash "${setup_root}/scripts/setup.sh"
-test "$(cat "${setup_root}/.env")" = 'TEST_SETTING=custom'
-test "$(cat "${setup_root}/data/existing")" = 'user data'
-test "$(stat -c %a "${setup_root}/data")" = 700
-
-# 安装命令用一次性容器引导工具，不依赖已启动的服务，并向上传递失败。
 cp "${ROOT_DIR}/Makefile" "${setup_root}/Makefile"
 make_bin="${root}/make-bin"
 mkdir -p "${make_bin}"
@@ -37,18 +22,56 @@ cat > "${make_bin}/docker" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${TEST_COMPOSE_LOG}"
-exit "${TEST_COMPOSE_EXIT:-0}"
+if [ "$4" = "${TEST_COMPOSE_FAIL_ON:-}" ]; then exit 23; fi
 SH
 chmod +x "${make_bin}/docker"
-PATH="${make_bin}:${PATH}" make --no-print-directory -C "${setup_root}" install
-test "$(cat "${TEST_COMPOSE_LOG}")" = \
-  'compose -f docker-compose.yml run --rm --no-deps -T opencode bash /workspace/.devcontainer/scripts/install.sh'
-test "$(cat "${setup_root}/.env")" = 'TEST_SETTING=custom'
-test "$(cat "${setup_root}/data/existing")" = 'user data'
-if PATH="${make_bin}:${PATH}" TEST_COMPOSE_EXIT=23 make --no-print-directory -C "${setup_root}" install; then
-  printf 'Expected container installation failure to fail make install\n' >&2
+
+local_make() {
+  PATH="${make_bin}:${PATH}" make --no-print-directory -C "${setup_root}" "$@"
+}
+
+if local_make setup > "${root}/setup-error.log" 2>&1; then
+  printf 'Expected make setup to require a manually configured .env\n' >&2
   exit 1
 fi
+grep -Fq '.env.sample' "${root}/setup-error.log"
+test ! -e "${setup_root}/.env"
+test ! -e "${setup_root}/data"
+test ! -e "${TEST_COMPOSE_LOG}"
+
+printf 'TEST_SETTING=custom\n' > "${setup_root}/.env"
+install_command='compose -f docker-compose.yml run --rm --no-deps --pull never -T opencode bash /workspace/.devcontainer/scripts/install.sh'
+expected_setup="$(printf '%s\n' 'compose -f docker-compose.yml build opencode' \
+  'compose -f docker-compose.yml pull --policy missing docker' "${install_command} --local-setup")"
+local_make setup
+test "$(cat "${TEST_COMPOSE_LOG}")" = "${expected_setup}"
+test -w "${setup_root}/data"
+test "$(stat -c %u "${setup_root}/data")" = "$(id -u)"
+printf 'user data\n' > "${setup_root}/data/existing"
+chmod 700 "${setup_root}/data"
+: > "${TEST_COMPOSE_LOG}"
+local_make setup
+test "$(cat "${TEST_COMPOSE_LOG}")" = "${expected_setup}"
+test "$(cat "${setup_root}/.env")" = 'TEST_SETTING=custom'
+test "$(cat "${setup_root}/data/existing")" = 'user data'
+test "$(stat -c %a "${setup_root}/data")" = 700
+
+# 各步骤失败时停止后续操作；start 不再构建、拉取或安装。
+for step in build pull run; do
+  : > "${TEST_COMPOSE_LOG}"
+  if TEST_COMPOSE_FAIL_ON="${step}" local_make setup; then
+    printf 'Expected %s failure to fail make setup\n' "${step}" >&2
+    exit 1
+  fi
+  test "$(tail -n 1 "${TEST_COMPOSE_LOG}" | cut -d ' ' -f 4)" = "${step}"
+done
+: > "${TEST_COMPOSE_LOG}"
+local_make start
+test "$(cat "${TEST_COMPOSE_LOG}")" = \
+  'compose -f docker-compose.yml up -d --no-build --pull never --remove-orphans'
+: > "${TEST_COMPOSE_LOG}"
+local_make install
+test "$(cat "${TEST_COMPOSE_LOG}")" = "${install_command}"
 
 # 空 home 从 /etc/skel 补齐；已有用户文件不覆盖；参数和退出码原样传递。
 bash "${ROOT_DIR}/scripts/entrypoint.sh"
@@ -188,7 +211,16 @@ done
 chmod +x "${TEST_BIN}"/*
 export PATH="${TEST_BIN}:${PATH}"
 
-bash "${runtime}/scripts/install.sh"
+if env -u OPENCODE_SERVER_PASSWORD MULTICA_TOKEN=test-token bash "${runtime}/scripts/install.sh" --local-setup; then
+  printf 'Expected local setup to require OPENCODE_SERVER_PASSWORD\n' >&2
+  exit 1
+fi
+if env -u MULTICA_TOKEN OPENCODE_SERVER_PASSWORD=test-password bash "${runtime}/scripts/install.sh" --local-setup; then
+  printf 'Expected local setup without Multica auth to require MULTICA_TOKEN\n' >&2
+  exit 1
+fi
+test ! -e "${TEST_LOG}"
+OPENCODE_SERVER_PASSWORD=test-password MULTICA_TOKEN=test-token bash "${runtime}/scripts/install.sh" --local-setup
 test -x "${HOME}/.local/bin/mise"
 test -x "${HOME}/.local/bin/multica"
 test -x "${HOME}/.local/bin/autoteam"
@@ -201,7 +233,7 @@ test -f "${HOME}/.claude/CLAUDE.md.before-agents-link"
 test -f "${HOME}/.claude/skills.before-agents-link/legacy/SKILL.md"
 
 # 重复安装保留用户备份，不重复引导 mise，并清理临时下载目录。
-bash "${runtime}/scripts/install.sh"
+env -u MULTICA_TOKEN TEST_AUTHENTICATED=1 OPENCODE_SERVER_PASSWORD=test-password bash "${runtime}/scripts/install.sh" --local-setup
 test "$(grep -c '^download https://mise.run$' "${TEST_LOG}")" = 1
 test "$(grep -c '^mise install --yes (' "${TEST_LOG}")" = 2
 test "$(grep -c '^smoke$' "${TEST_LOG}")" = 2
