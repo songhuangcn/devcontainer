@@ -54,8 +54,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-publishers \
     texlive-xetex \
     ttf-mscorefonts-installer \
+    tzdata \
     xdg-utils \
-    && locale-gen en_US.UTF-8 zh_CN.UTF-8 \
     && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
@@ -73,15 +73,19 @@ RUN install -d /usr/local/share/fonts/opentype/source-han-serif \
 
 RUN echo "ubuntu ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
+# Regional defaults and compatibility with tools that read $SHELL.
+ENV TZ=Asia/Tokyo \
+    LANG=ja_JP.UTF-8 \
+    LANGUAGE=ja \
+    SHELL=/bin/bash
+
+RUN LC_ALL=C locale-gen en_US.UTF-8 zh_CN.UTF-8 "${LANG}" \
+    && ln -snf "/usr/share/zoneinfo/${TZ}" /etc/localtime \
+    && printf '%s\n' "${TZ}" > /etc/timezone
+
 USER ubuntu
 
 WORKDIR /workspace
-
-ENV TZ=Asia/Shanghai \
-    LANG=zh_CN.UTF-8 \
-    LANGUAGE=zh_CN:zh \
-    LC_ALL=zh_CN.UTF-8 \
-    SHELL=/bin/bash
 
 COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 

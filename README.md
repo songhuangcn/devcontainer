@@ -24,6 +24,8 @@ CI 只发布主镜像：
 
 `songhuangcn/devcontainer` 虽然保留原名称，但现在是纯 Docker 镜像，不依赖 devcontainer feature，包含 LaTeX/PDF、CJK 字体和 PDF 检查工具；Pandoc 等 mise 工具在启动后安装。
 
+OpenCode 和 Multica 的应用容器默认使用 `Asia/Tokyo`（JST，UTC+9）与日语 locale `ja_JP.UTF-8`。镜像也保留 `en_US.UTF-8` 和 `zh_CN.UTF-8`，可通过 `LANG` 和 `LANGUAGE` 为单条命令切换语言。容器 locale 不会改变宿主机、浏览器或 Web 界面的语言设置。
+
 mise、OpenCode、Claude、Codex、Node、Python、GitHub CLI、Docker CLI、Compose plugin、Multica、Autoteam 等都由 `make setup` 安装到用户 home。配置、安装脚本和 skills 不进入镜像，修改它们无需重新构建基础镜像。
 
 ## 前置依赖
